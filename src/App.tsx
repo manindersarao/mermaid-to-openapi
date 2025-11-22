@@ -11,10 +11,59 @@ import {
   GripHorizontal
 } from 'lucide-react';
 
+// --- Type Definitions ---
+
+interface MermaidViewerProps {
+  code: string;
+}
+
+interface Parameter {
+  name: string;
+  in: 'path' | 'query' | 'header' | 'cookie';
+  required?: boolean;
+  schema: {
+    type: string;
+    example?: string;
+  };
+}
+
+interface ResponseContent {
+  description: string;
+  content: {
+    "application/json": {
+      schema: {
+        type: string;
+        example: Record<string, unknown>;
+      };
+    };
+  };
+}
+
+interface Operation {
+  summary: string;
+  parameters?: Parameter[];
+  responses: Record<string, ResponseContent>;
+}
+
+interface PathItem {
+  [method: string]: Operation; 
+}
+
+interface OpenApiDoc {
+  openapi: string;
+  info: {
+    title: string;
+    version: string;
+    description?: string;
+  };
+  paths: Record<string, PathItem>;
+}
+
 // --- Mermaid Renderer Component ---
-const MermaidViewer = ({ code }) => {
-  const [imgUrl, setImgUrl] = useState('');
-  const [error, setError] = useState(false);
+
+const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
+  const [imgUrl, setImgUrl] = useState<string>('');
+  const [error, setError] = useState<boolean>(false);
 
   useEffect(() => {
     try {
@@ -51,7 +100,7 @@ const MermaidViewer = ({ code }) => {
         <img 
           src={imgUrl} 
           alt="Mermaid Diagram" 
-          className="max-w-none shadow-sm" // max-w-none allows scrolling if pane is small
+          className="max-w-none shadow-sm"
           loading="lazy"
         />
       ) : (
@@ -65,7 +114,7 @@ const MermaidViewer = ({ code }) => {
 
 export default function App() {
   // State for content
-  const [mermaidCode, setMermaidCode] = useState(`sequenceDiagram
+  const [mermaidCode, setMermaidCode] = useState<string>(`sequenceDiagram
     participant User
     participant API
     
@@ -77,25 +126,25 @@ export default function App() {
     User->>API: POST /users/{id}/update
     API-->>User: 200 Updated`);
 
-  const [openApiOutput, setOpenApiOutput] = useState('');
-  const [outputFormat, setOutputFormat] = useState('yaml');
-  const [activeTab, setActiveTab] = useState('editor');
-  const [copied, setCopied] = useState(false);
-  const [parseError, setParseError] = useState(null);
+  const [openApiOutput, setOpenApiOutput] = useState<string>('');
+  const [outputFormat, setOutputFormat] = useState<'yaml' | 'json'>('yaml');
+  const [activeTab, setActiveTab] = useState<'editor' | 'guide'>('editor');
+  const [copied, setCopied] = useState<boolean>(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   // --- Resizing State & Refs ---
-  // leftWidth is percentage of total screen width
-  const [leftWidth, setLeftWidth] = useState(50); 
-  // topHeight is percentage of the Left Pane's height
-  const [topHeight, setTopHeight] = useState(50);
+  const [leftWidth, setLeftWidth] = useState<number>(50); 
+  const [topHeight, setTopHeight] = useState<number>(50);
   
-  const containerRef = useRef(null);
-  const leftPaneRef = useRef(null);
-  const isDraggingVertical = useRef(false);
-  const isDraggingHorizontal = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const leftPaneRef = useRef<HTMLDivElement>(null);
+  
+  // Use boolean refs to track dragging state without triggering re-renders
+  const isDraggingVertical = useRef<boolean>(false);
+  const isDraggingHorizontal = useRef<boolean>(false);
 
   // --- Resizing Logic ---
-  const handleMouseMove = useCallback((e) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isDraggingVertical.current && containerRef.current) {
       const containerRect = containerRef.current.getBoundingClientRect();
       let newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
@@ -118,7 +167,7 @@ export default function App() {
         isDraggingVertical.current = false;
         isDraggingHorizontal.current = false;
         document.body.style.cursor = 'default';
-        document.body.style.userSelect = 'auto'; // Re-enable text selection
+        document.body.style.userSelect = 'auto'; 
     }
   }, []);
 
@@ -131,14 +180,14 @@ export default function App() {
     };
   }, [handleMouseMove, handleMouseUp]);
 
-  const startVerticalDrag = (e) => {
+  const startVerticalDrag = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     isDraggingVertical.current = true;
     document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none'; // Prevent text selection while dragging
+    document.body.style.userSelect = 'none'; 
   };
 
-  const startHorizontalDrag = (e) => {
+  const startHorizontalDrag = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     isDraggingHorizontal.current = true;
     document.body.style.cursor = 'row-resize';
@@ -147,11 +196,12 @@ export default function App() {
 
 
   // --- The Parser Logic ---
-  const parseMermaidToOpenApi = (code) => {
+  const parseMermaidToOpenApi = (code: string): OpenApiDoc => {
     const lines = code.split('\n');
-    const paths = {};
-    let currentPath = null;
-    let currentMethod = null;
+    const paths: Record<string, PathItem> = {};
+    let currentPath: string | null = null;
+    let currentMethod: string | null = null;
+    
     const requestPattern = /->>.*?: ?(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) ([^\s]+)(.*)/i;
     const responsePattern = /-->>.*?: ?(\d{3})(.*)/;
 
@@ -166,7 +216,7 @@ export default function App() {
         const rawSummary = reqMatch[3] ? reqMatch[3].trim() : '';
         
         let pathKey = rawUrl;
-        const detectedParams = [];
+        const detectedParams: Parameter[] = [];
 
         if (rawUrl.includes('?')) {
             const [p, q] = rawUrl.split('?');
@@ -216,13 +266,21 @@ export default function App() {
       if (resMatch && currentPath && currentMethod) {
         const status = resMatch[1];
         const description = resMatch[2] ? resMatch[2].trim() : 'Response description';
+        
         if (paths[currentPath] && paths[currentPath][currentMethod]) {
              if (!paths[currentPath][currentMethod].responses) {
                 paths[currentPath][currentMethod].responses = {};
             }
             paths[currentPath][currentMethod].responses[status] = {
                 description: description,
-                content: { "application/json": { schema: { type: "object", example: {} } } }
+                content: { 
+                  "application/json": { 
+                    schema: { 
+                      type: "object", 
+                      example: {} 
+                    } 
+                  } 
+                }
             };
         }
       }
@@ -235,17 +293,27 @@ export default function App() {
     };
   };
 
-  const toYaml = (obj, indent = 0) => {
+  // Helper type for recursive iteration
+  const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
     let yaml = '';
     const spaces = '  '.repeat(indent);
-    for (const key in obj) {
-      const value = obj[key];
+    
+    if (typeof obj !== 'object' || obj === null) {
+      return `${JSON.stringify(obj)}\n`;
+    }
+
+    // Handle standard objects and arrays
+    const objectValue = obj as Record<string, unknown>;
+
+    for (const key in objectValue) {
+      const value = objectValue[key];
       if (value === undefined) continue; 
+      
       if (typeof value === 'object' && value !== null) {
         if (Array.isArray(value)) {
             yaml += `${spaces}${key}:\n`;
-            value.forEach(item => {
-                if (typeof item === 'object') {
+            value.forEach((item: unknown) => {
+                if (typeof item === 'object' && item !== null) {
                     const itemYaml = toYaml(item, indent + 2).trimStart();
                     yaml += `${spaces}  - ${itemYaml}`; 
                 } else {
@@ -272,8 +340,15 @@ export default function App() {
       } else {
         setParseError(null);
       }
-      if (outputFormat === 'json') setOpenApiOutput(JSON.stringify(resultObj, null, 2));
-      else setOpenApiOutput(toYaml(resultObj));
+      
+      // Type assertion for toYaml compatibility
+      const safeResult = resultObj as unknown as Record<string, unknown>;
+
+      if (outputFormat === 'json') {
+        setOpenApiOutput(JSON.stringify(resultObj, null, 2));
+      } else {
+        setOpenApiOutput(toYaml(safeResult));
+      }
     } catch (err) {
       setParseError("Error parsing diagram.");
     }
@@ -284,7 +359,12 @@ export default function App() {
     textarea.value = openApiOutput;
     document.body.appendChild(textarea);
     textarea.select();
-    try { document.execCommand('copy'); setCopied(true); } catch (e) {}
+    try { 
+      document.execCommand('copy'); 
+      setCopied(true); 
+    } catch (e) {
+      console.error("Copy failed", e);
+    }
     document.body.removeChild(textarea);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -332,11 +412,24 @@ export default function App() {
         
         {activeTab === 'guide' ? (
           <div className="w-full h-full overflow-auto p-8 max-w-4xl mx-auto">
-             {/* Guide Content Omitted for brevity, logic remains same as previous */}
              <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
                 <h2 className="text-2xl font-bold mb-6 text-blue-600">Syntax Guide</h2>
-                <p>1. <strong>Request:</strong> <code>User-&gt;&gt;API: GET /path</code></p>
-                <p>2. <strong>Response:</strong> <code>API--&gt;&gt;User: 200 OK</code></p>
+                <div className="space-y-4 text-slate-700">
+                  <p className="flex items-center gap-2">
+                    <span className="font-bold bg-slate-100 px-2 py-1 rounded">Request</span> 
+                    <code>User-&gt;&gt;API: GET /path</code>
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <span className="font-bold bg-slate-100 px-2 py-1 rounded">Response</span> 
+                    <code>API--&gt;&gt;User: 200 OK</code>
+                  </p>
+                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+                    <p className="text-sm text-yellow-800">
+                      <Info size={14} className="inline mr-1"/>
+                      Parameters in <code>{`{braces}`}</code> are detected as path parameters. Query strings <code>?key=val</code> are detected as query parameters.
+                    </p>
+                  </div>
+                </div>
              </div>
           </div>
         ) : (
@@ -358,7 +451,7 @@ export default function App() {
                         onChange={(e) => setMermaidCode(e.target.value)}
                         className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none text-slate-700 w-full"
                         placeholder="Enter mermaid code..."
-                        spellCheck="false"
+                        spellCheck={false}
                     />
                 </div>
 
