@@ -17,31 +17,48 @@ interface MermaidViewerProps {
   code: string;
 }
 
+interface SchemaObject {
+  type: string;
+  format?: string;
+  properties?: Record<string, SchemaObject>;
+  required?: string[];
+  example?: any;
+  items?: SchemaObject;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+}
+
 interface Parameter {
   name: string;
   in: 'path' | 'query' | 'header' | 'cookie';
   required?: boolean;
-  schema: {
-    type: string;
-    example?: string;
-  };
+  schema: SchemaObject;
+}
+
+interface MediaType {
+  schema: SchemaObject;
 }
 
 interface ResponseContent {
   description: string;
   content: {
-    "application/json": {
-      schema: {
-        type: string;
-        example: Record<string, unknown>;
-      };
-    };
+    "application/json": MediaType;
   };
+}
+
+interface RequestBody {
+  content: {
+    "application/json": MediaType;
+  };
+  required?: boolean;
 }
 
 interface Operation {
   summary: string;
   parameters?: Parameter[];
+  requestBody?: RequestBody;
   responses: Record<string, ResponseContent>;
 }
 
@@ -58,6 +75,97 @@ interface OpenApiDoc {
   };
   paths: Record<string, PathItem>;
 }
+
+// --- Helper Functions ---
+
+const parseSchemaFromValue = (value: any): { schema: SchemaObject, isRequired: boolean } => {
+  const schema: SchemaObject = { type: 'string' };
+  let isRequired = false;
+
+  if (typeof value === 'string') {
+    // Check for validation shorthand string: "type, validation, ..."
+    // e.g. "string, required, format:email"
+    const parts = value.split(',').map(s => s.trim());
+    const validTypes = ['string', 'integer', 'number', 'boolean', 'array', 'object'];
+    
+    // Heuristic: If it starts with a type OR has "required"/"min:"/"max:", treat as definition
+    const explicitType = validTypes.includes(parts[0]) ? parts[0] : null;
+    const isDefinition = explicitType || parts.some(p => p === 'required' || p.includes(':'));
+
+    if (isDefinition) {
+      schema.type = explicitType || 'string'; // Default to string if just validations provided
+
+      parts.forEach(part => {
+        if (part === 'required') isRequired = true;
+        else if (part.startsWith('min:')) {
+          const val = Number(part.split(':')[1]);
+          if (schema.type === 'string') schema.minLength = val;
+          else schema.minimum = val;
+        }
+        else if (part.startsWith('max:')) {
+          const val = Number(part.split(':')[1]);
+          if (schema.type === 'string') schema.maxLength = val;
+          else schema.maximum = val;
+        }
+        else if (part.startsWith('format:')) {
+          schema.format = part.split(':')[1];
+        }
+        else if (part.startsWith('example:')) {
+          schema.example = part.split(':')[1];
+        }
+      });
+      return { schema, isRequired };
+    }
+  }
+
+  // Infer from literal value
+  if (typeof value === 'number') {
+    schema.type = Number.isInteger(value) ? 'integer' : 'number';
+    schema.example = value;
+  } else if (typeof value === 'boolean') {
+    schema.type = 'boolean';
+    schema.example = value;
+  } else if (Array.isArray(value)) {
+    schema.type = 'array';
+    schema.items = parseSchemaFromValue(value[0] || '').schema;
+  } else if (typeof value === 'object' && value !== null) {
+    schema.type = 'object';
+    // Recursion is handled by the generateSchema function, not here for leaf values usually
+  } else {
+    schema.type = 'string';
+    schema.example = value;
+  }
+
+  return { schema, isRequired };
+};
+
+const generateSchema = (jsonObj: Record<string, any>): SchemaObject => {
+  const properties: Record<string, SchemaObject> = {};
+  const requiredFields: string[] = [];
+
+  for (const [key, value] of Object.entries(jsonObj)) {
+    // Recursive check for nested objects
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      properties[key] = generateSchema(value);
+    } else {
+      const { schema, isRequired } = parseSchemaFromValue(value);
+      properties[key] = schema;
+      if (isRequired) requiredFields.push(key);
+    }
+  }
+
+  const result: SchemaObject = {
+    type: 'object',
+    properties
+  };
+
+  if (requiredFields.length > 0) {
+    result.required = requiredFields;
+  }
+
+  return result;
+};
+
 
 // --- Mermaid Renderer Component ---
 
@@ -113,18 +221,16 @@ const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
 // --- Main Application ---
 
 export default function App() {
-  // State for content
   const [mermaidCode, setMermaidCode] = useState<string>(`sequenceDiagram
     participant User
     participant API
     
-    Note over User, API: Resize panes to view details
+    Note over User, API: Define validation rules in Body notes
     
-    User->>API: GET /users?active=true
-    API-->>User: 200 OK
+    User->>API: POST /users/register
+    Note right of User: Body: { "username": "string, required, min:5", "age": "integer, min:18", "email": "alice@test.com" }
     
-    User->>API: POST /users/{id}/update
-    API-->>User: 200 Updated`);
+    API-->>User: 201 Created`);
 
   const [openApiOutput, setOpenApiOutput] = useState<string>('');
   const [outputFormat, setOutputFormat] = useState<'yaml' | 'json'>('yaml');
@@ -138,8 +244,6 @@ export default function App() {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const leftPaneRef = useRef<HTMLDivElement>(null);
-  
-  // Use boolean refs to track dragging state without triggering re-renders
   const isDraggingVertical = useRef<boolean>(false);
   const isDraggingHorizontal = useRef<boolean>(false);
 
@@ -148,7 +252,6 @@ export default function App() {
     if (isDraggingVertical.current && containerRef.current) {
       const containerRect = containerRef.current.getBoundingClientRect();
       let newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-      // Clamp between 20% and 80%
       newWidth = Math.min(Math.max(newWidth, 20), 80);
       setLeftWidth(newWidth);
     }
@@ -156,7 +259,6 @@ export default function App() {
     if (isDraggingHorizontal.current && leftPaneRef.current) {
       const paneRect = leftPaneRef.current.getBoundingClientRect();
       let newHeight = ((e.clientY - paneRect.top) / paneRect.height) * 100;
-      // Clamp between 20% and 80%
       newHeight = Math.min(Math.max(newHeight, 20), 80);
       setTopHeight(newHeight);
     }
@@ -199,25 +301,31 @@ export default function App() {
   const parseMermaidToOpenApi = (code: string): OpenApiDoc => {
     const lines = code.split('\n');
     const paths: Record<string, PathItem> = {};
+    
+    // State tracking
     let currentPath: string | null = null;
     let currentMethod: string | null = null;
+    let lastInteraction: { type: 'req' | 'res', status?: string } | null = null;
     
+    // Patterns
     const requestPattern = /->>.*?: ?(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) ([^\s]+)(.*)/i;
     const responsePattern = /-->>.*?: ?(\d{3})(.*)/;
+    const notePattern = /Note .*?: ?Body: ?(.+)/i;
 
     lines.forEach((line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
       
+      // 1. Check Request
       const reqMatch = trimmed.match(requestPattern);
       if (reqMatch) {
         const method = reqMatch[1].toLowerCase();
         const rawUrl = reqMatch[2]; 
         const rawSummary = reqMatch[3] ? reqMatch[3].trim() : '';
         
+        // Parse URL
         let pathKey = rawUrl;
         const detectedParams: Parameter[] = [];
-
         if (rawUrl.includes('?')) {
             const [p, q] = rawUrl.split('?');
             pathKey = p;
@@ -235,7 +343,6 @@ export default function App() {
                 });
             }
         }
-
         const paramMatches = pathKey.match(/\{([^}]+)\}/g);
         if (paramMatches) {
             paramMatches.forEach(p => {
@@ -252,36 +359,69 @@ export default function App() {
         const summary = rawSummary || `Operation for ${pathKey}`;
         if (!paths[pathKey]) paths[pathKey] = {};
         
+        // Initialize Operation
         paths[pathKey][method] = {
           summary: summary,
           parameters: detectedParams.length > 0 ? detectedParams : undefined,
           responses: {}
         };
+        
         currentPath = pathKey;
         currentMethod = method;
+        lastInteraction = { type: 'req' };
         return;
       }
 
+      // 2. Check Response
       const resMatch = trimmed.match(responsePattern);
       if (resMatch && currentPath && currentMethod) {
         const status = resMatch[1];
         const description = resMatch[2] ? resMatch[2].trim() : 'Response description';
         
-        if (paths[currentPath] && paths[currentPath][currentMethod]) {
-             if (!paths[currentPath][currentMethod].responses) {
+        if (paths[currentPath][currentMethod]) {
+            if (!paths[currentPath][currentMethod].responses) {
                 paths[currentPath][currentMethod].responses = {};
             }
+            // Default response
             paths[currentPath][currentMethod].responses[status] = {
                 description: description,
                 content: { 
                   "application/json": { 
-                    schema: { 
-                      type: "object", 
-                      example: {} 
-                    } 
+                    schema: { type: "object", example: {} } 
                   } 
                 }
             };
+        }
+        lastInteraction = { type: 'res', status: status };
+        return;
+      }
+
+      // 3. Check Note for Body Definition
+      const noteMatch = trimmed.match(notePattern);
+      if (noteMatch && currentPath && currentMethod && lastInteraction) {
+        const bodyContent = noteMatch[1].trim();
+        try {
+            // Attempt to parse JSON
+            const parsedJson = JSON.parse(bodyContent);
+            const schema = generateSchema(parsedJson);
+
+            if (lastInteraction.type === 'req') {
+                // Attach to Request Body
+                paths[currentPath][currentMethod].requestBody = {
+                    content: {
+                        "application/json": { schema: schema }
+                    },
+                    required: true
+                };
+            } else if (lastInteraction.type === 'res' && lastInteraction.status) {
+                // Attach to Response Body
+                const status = lastInteraction.status;
+                if (paths[currentPath][currentMethod].responses[status]) {
+                    paths[currentPath][currentMethod].responses[status].content["application/json"].schema = schema;
+                }
+            }
+        } catch (e) {
+            console.warn("Failed to parse body note JSON", e);
         }
       }
     });
@@ -293,7 +433,6 @@ export default function App() {
     };
   };
 
-  // Helper type for recursive iteration
   const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
     let yaml = '';
     const spaces = '  '.repeat(indent);
@@ -302,7 +441,6 @@ export default function App() {
       return `${JSON.stringify(obj)}\n`;
     }
 
-    // Handle standard objects and arrays
     const objectValue = obj as Record<string, unknown>;
 
     for (const key in objectValue) {
@@ -341,7 +479,6 @@ export default function App() {
         setParseError(null);
       }
       
-      // Type assertion for toYaml compatibility
       const safeResult = resultObj as unknown as Record<string, unknown>;
 
       if (outputFormat === 'json') {
@@ -359,12 +496,7 @@ export default function App() {
     textarea.value = openApiOutput;
     document.body.appendChild(textarea);
     textarea.select();
-    try { 
-      document.execCommand('copy'); 
-      setCopied(true); 
-    } catch (e) {
-      console.error("Copy failed", e);
-    }
+    try { document.execCommand('copy'); setCopied(true); } catch (e) {}
     document.body.removeChild(textarea);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -374,11 +506,15 @@ export default function App() {
     participant Client
     participant API
     
-    Client->>API: GET /users?role=admin
-    API-->>Client: 200 []
+    Note over Client, API: Validation Examples
     
-    Client->>API: POST /users/{id}
-    API-->>Client: 201 Created`);
+    Client->>API: POST /users/create
+    Note right of Client: Body: { "username": "string, required, min:5", "age": "integer, min:18, max:99", "email": "string, required, format:email" }
+    API-->>Client: 201 { "id": 123, "status": "created" }
+    
+    Client->>API: PUT /products/{id}
+    Note right of Client: Body: { "tags": ["array", "string"], "stock": 50 }
+    API-->>Client: 200 { "updated": true }`);
   };
 
   return (
@@ -414,20 +550,29 @@ export default function App() {
           <div className="w-full h-full overflow-auto p-8 max-w-4xl mx-auto">
              <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
                 <h2 className="text-2xl font-bold mb-6 text-blue-600">Syntax Guide</h2>
-                <div className="space-y-4 text-slate-700">
-                  <p className="flex items-center gap-2">
-                    <span className="font-bold bg-slate-100 px-2 py-1 rounded">Request</span> 
-                    <code>User-&gt;&gt;API: GET /path</code>
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <span className="font-bold bg-slate-100 px-2 py-1 rounded">Response</span> 
-                    <code>API--&gt;&gt;User: 200 OK</code>
-                  </p>
-                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                    <p className="text-sm text-yellow-800">
-                      <Info size={14} className="inline mr-1"/>
-                      Parameters in <code>{`{braces}`}</code> are detected as path parameters. Query strings <code>?key=val</code> are detected as query parameters.
-                    </p>
+                <div className="space-y-6 text-slate-700">
+                  <div className="border-b pb-4">
+                    <h3 className="font-bold text-lg mb-2">1. Request & Response</h3>
+                    <code className="block bg-slate-100 p-2 rounded mb-2">User-&gt;&gt;API: POST /path</code>
+                    <code className="block bg-slate-100 p-2 rounded">API--&gt;&gt;User: 200 OK</code>
+                  </div>
+                  
+                  <div className="border-b pb-4">
+                    <h3 className="font-bold text-lg mb-2">2. Body & Validation</h3>
+                    <p className="mb-2 text-sm">Add a note starting with <code>Body:</code> immediately after a request or response.</p>
+                    <code className="block bg-slate-100 p-2 rounded mb-2">Note right of User: Body: &#123; "key": "rule" &#125;</code>
+                    
+                    <h4 className="font-semibold mt-3 text-sm">Validation Rules (String Format):</h4>
+                    <ul className="list-disc list-inside text-sm space-y-1 mt-1">
+                        <li><code>"string, required"</code></li>
+                        <li><code>"integer, min:10, max:20"</code></li>
+                        <li><code>"string, format:email"</code></li>
+                        <li><code>"string, min:5"</code> (interpreted as minLength)</li>
+                    </ul>
+                    
+                    <h4 className="font-semibold mt-3 text-sm">Implicit Inference:</h4>
+                    <p className="text-sm">Use literal values to infer types automatically:</p>
+                    <code className="block bg-slate-100 p-2 rounded mt-1 text-xs">Body: &#123; "age": 25, "active": true &#125;</code>
                   </div>
                 </div>
              </div>
@@ -435,13 +580,13 @@ export default function App() {
         ) : (
           <div className="flex w-full h-full">
             
-            {/* LEFT PANE (Code + Diagram) */}
+            {/* LEFT PANE */}
             <div 
                 ref={leftPaneRef}
                 className="flex flex-col h-full min-w-[200px]"
                 style={{ width: `${leftWidth}%` }}
             >
-                {/* Top Section: Code Editor */}
+                {/* Editor */}
                 <div className="flex flex-col min-h-[100px]" style={{ height: `${topHeight}%` }}>
                     <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
                         <span className="text-xs font-bold text-slate-500 uppercase">Mermaid Input</span>
@@ -463,7 +608,7 @@ export default function App() {
                     <GripHorizontal size={16} className="text-slate-400 group-hover:text-blue-500" />
                 </div>
 
-                {/* Bottom Section: Diagram Preview */}
+                {/* Preview */}
                 <div className="flex-1 flex flex-col min-h-[100px] overflow-hidden bg-white">
                     <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
                         <span className="text-xs font-bold text-slate-500 uppercase">Diagram Preview</span>
@@ -482,7 +627,7 @@ export default function App() {
                 <GripVertical size={16} className="text-slate-400 group-hover:text-blue-500" />
             </div>
 
-            {/* RIGHT PANE (OpenAPI Output) */}
+            {/* RIGHT PANE */}
             <div className="flex-1 flex flex-col h-full bg-slate-900 text-slate-100 min-w-[200px]">
               <div className="px-4 py-2 bg-slate-800 border-b border-slate-700 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
