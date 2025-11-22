@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowRightLeft, 
   Copy, 
-  Check, 
-  Info, 
+  Check,
   AlertCircle,
   BookOpen,
   Play,
