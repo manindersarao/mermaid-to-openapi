@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowRightLeft, 
   Copy, 
-  Check,
+  Check, 
   AlertCircle,
   BookOpen,
-  Play,
   GripVertical,
-  GripHorizontal
+  GripHorizontal,
+  ChevronRight
 } from 'lucide-react';
 
 // --- Type Definitions ---
@@ -75,15 +75,15 @@ interface OpenApiDoc {
   paths: Record<string, PathItem>;
 }
 
-// --- Helper Functions ---
+// --- Helper Functions for Type Inference ---
 
 const parseSchemaFromValue = (value: any): { schema: SchemaObject, isRequired: boolean } => {
   const schema: SchemaObject = { type: 'string' };
   let isRequired = false;
 
+  // 1. Handle Explicit Validation Strings (e.g. "integer, required")
   if (typeof value === 'string') {
-    // Check for validation shorthand string: "type, validation, ..."
-    // e.g. "string, required, format:email"
+    // Check if it looks like a validation string
     const parts = value.split(',').map(s => s.trim());
     const validTypes = ['string', 'integer', 'number', 'boolean', 'array', 'object'];
     
@@ -92,7 +92,7 @@ const parseSchemaFromValue = (value: any): { schema: SchemaObject, isRequired: b
     const isDefinition = explicitType || parts.some(p => p === 'required' || p.includes(':'));
 
     if (isDefinition) {
-      schema.type = explicitType || 'string'; // Default to string if just validations provided
+      schema.type = explicitType || 'string';
 
       parts.forEach(part => {
         if (part === 'required') isRequired = true;
@@ -110,15 +110,18 @@ const parseSchemaFromValue = (value: any): { schema: SchemaObject, isRequired: b
           schema.format = part.split(':')[1];
         }
         else if (part.startsWith('example:')) {
-          schema.example = part.split(':')[1];
+          schema.example = part.split(':')[1]; // Only string examples in this mode
         }
       });
       return { schema, isRequired };
     }
   }
 
-  // Infer from literal value
-  if (typeof value === 'number') {
+  // 2. Auto-Inference from Literal Values
+  if (value === null) {
+     schema.type = 'string'; // Default for nulls in simple inference
+     // In real OpenAPI 3.0 you'd add nullable: true, keeping simple for now
+  } else if (typeof value === 'number') {
     schema.type = Number.isInteger(value) ? 'integer' : 'number';
     schema.example = value;
   } else if (typeof value === 'boolean') {
@@ -126,11 +129,22 @@ const parseSchemaFromValue = (value: any): { schema: SchemaObject, isRequired: b
     schema.example = value;
   } else if (Array.isArray(value)) {
     schema.type = 'array';
-    schema.items = parseSchemaFromValue(value[0] || '').schema;
-  } else if (typeof value === 'object' && value !== null) {
+    // Infer items type from the first element
+    if (value.length > 0) {
+        schema.items = parseSchemaFromValue(value[0]).schema;
+    } else {
+        schema.items = { type: 'string' }; // Default for empty array
+    }
+    schema.example = value;
+  } else if (typeof value === 'object') {
+    // Recursion is handled by generateSchema, this block is hit if an array has an object
+    // schema.type = 'object'; 
+    // properties handled externally usually, but if hit directly:
+    // return { schema: generateSchema(value), isRequired: false };
+    // For safety here, we treat as generic object if not passed through generateSchema
     schema.type = 'object';
-    // Recursion is handled by the generateSchema function, not here for leaf values usually
   } else {
+    // Default String literal
     schema.type = 'string';
     schema.example = value;
   }
@@ -166,7 +180,7 @@ const generateSchema = (jsonObj: Record<string, any>): SchemaObject => {
 };
 
 
-// --- Mermaid Renderer Component ---
+// --- Components ---
 
 const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
   const [imgUrl, setImgUrl] = useState<string>('');
@@ -190,7 +204,6 @@ const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
       setImgUrl(`https://mermaid.ink/img/${b64}`);
       setError(false);
     } catch (e) {
-      console.error("Mermaid render error:", e);
       setError(true);
     }
   }, [code]);
@@ -204,18 +217,34 @@ const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
   return (
     <div className="w-full h-full bg-white overflow-auto flex justify-center items-start p-4">
       {code ? (
-        <img 
-          src={imgUrl} 
-          alt="Mermaid Diagram" 
-          className="max-w-none shadow-sm"
-          loading="lazy"
-        />
+        <img src={imgUrl} alt="Mermaid Diagram" className="max-w-none shadow-sm" loading="lazy" />
       ) : (
         <span className="text-slate-400 text-sm">Diagram preview</span>
       )}
     </div>
   );
 };
+
+// --- Guide Component ---
+
+const GuideSection = ({ title, description, code, onApply }: { title: string, description: string, code: string, onApply: (c: string) => void }) => (
+    <div className="mb-8 border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                <ChevronRight size={16} className="text-blue-500" /> {title}
+            </h3>
+            <button onClick={() => onApply(code)} className="text-xs bg-white border border-slate-300 px-2 py-1 rounded hover:bg-slate-50 text-slate-600 font-medium">
+                Try this
+            </button>
+        </div>
+        <div className="p-4">
+            <p className="text-sm text-slate-600 mb-3">{description}</p>
+            <div className="bg-slate-900 rounded-md p-3 relative group">
+                <code className="text-xs text-blue-300 font-mono whitespace-pre-wrap">{code}</code>
+            </div>
+        </div>
+    </div>
+);
 
 // --- Main Application ---
 
@@ -224,12 +253,11 @@ export default function App() {
     participant User
     participant API
     
-    Note over User, API: Define validation rules in Body notes
+    Note over User, API: Auto-Type Inference Demo
     
-    User->>API: POST /users/register
-    Note right of User: Body: { "username": "string, required, min:5", "age": "integer, min:18", "email": "alice@test.com" }
-    
-    API-->>User: 201 Created`);
+    User->>API: POST /products/create
+    Note right of User: Body: { "name": "Super Widget", "price": 19.99, "stock": 100, "tags": ["gadget", "sale"] }
+    API-->>User: 201 { "id": 550e8400, "status": "created" }`);
 
   const [openApiOutput, setOpenApiOutput] = useState<string>('');
   const [outputFormat, setOutputFormat] = useState<'yaml' | 'json'>('yaml');
@@ -237,28 +265,186 @@ export default function App() {
   const [copied, setCopied] = useState<boolean>(false);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // --- Resizing State & Refs ---
+  // Layout State
   const [leftWidth, setLeftWidth] = useState<number>(50); 
   const [topHeight, setTopHeight] = useState<number>(50);
-  
   const containerRef = useRef<HTMLDivElement>(null);
   const leftPaneRef = useRef<HTMLDivElement>(null);
   const isDraggingVertical = useRef<boolean>(false);
   const isDraggingHorizontal = useRef<boolean>(false);
 
-  // --- Resizing Logic ---
+  // --- Parser Logic ---
+  const parseMermaidToOpenApi = (code: string): OpenApiDoc => {
+    const lines = code.split('\n');
+    const paths: Record<string, PathItem> = {};
+    
+    let currentPath: string | null = null;
+    let currentMethod: string | null = null;
+    let lastInteraction: { type: 'req' | 'res', status?: string } | null = null;
+    
+    const requestPattern = /->>.*?: ?(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) ([^\s]+)(.*)/i;
+    const responsePattern = /-->>.*?: ?(\d{3})(.*)/;
+    const notePattern = /Note .*?: ?Body: ?(.+)/i;
+
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      
+      // Request
+      const reqMatch = trimmed.match(requestPattern);
+      if (reqMatch) {
+        const method = reqMatch[1].toLowerCase();
+        const rawUrl = reqMatch[2]; 
+        const rawSummary = reqMatch[3] ? reqMatch[3].trim() : '';
+        
+        let pathKey = rawUrl;
+        const detectedParams: Parameter[] = [];
+        // Query Params
+        if (rawUrl.includes('?')) {
+            const [p, q] = rawUrl.split('?');
+            pathKey = p;
+            if (q) {
+                const pairs = q.split('&');
+                pairs.forEach(pair => {
+                    const [key, val] = pair.split('=');
+                    if (key) {
+                        detectedParams.push({
+                            name: key,
+                            in: "query",
+                            schema: { type: "string", example: val || "" }
+                        });
+                    }
+                });
+            }
+        }
+        // Path Params
+        const paramMatches = pathKey.match(/\{([^}]+)\}/g);
+        if (paramMatches) {
+            paramMatches.forEach(p => {
+                const name = p.replace(/[{}]/g, '');
+                detectedParams.push({
+                    name: name,
+                    in: "path",
+                    required: true,
+                    schema: { type: "string" }
+                });
+            });
+        }
+
+        const summary = rawSummary || `Operation for ${pathKey}`;
+        if (!paths[pathKey]) paths[pathKey] = {};
+        paths[pathKey][method] = {
+          summary: summary,
+          parameters: detectedParams.length > 0 ? detectedParams : undefined,
+          responses: {}
+        };
+        
+        currentPath = pathKey;
+        currentMethod = method;
+        lastInteraction = { type: 'req' };
+        return;
+      }
+
+      // Response
+      const resMatch = trimmed.match(responsePattern);
+      if (resMatch && currentPath && currentMethod) {
+        const status = resMatch[1];
+        const description = resMatch[2] ? resMatch[2].trim() : 'Response description';
+        
+        if (paths[currentPath][currentMethod]) {
+            if (!paths[currentPath][currentMethod].responses) {
+                paths[currentPath][currentMethod].responses = {};
+            }
+            paths[currentPath][currentMethod].responses[status] = {
+                description: description,
+                content: { "application/json": { schema: { type: "object", example: {} } } }
+            };
+        }
+        lastInteraction = { type: 'res', status: status };
+        return;
+      }
+
+      // Body Notes
+      const noteMatch = trimmed.match(notePattern);
+      if (noteMatch && currentPath && currentMethod && lastInteraction) {
+        const bodyContent = noteMatch[1].trim();
+        try {
+            const parsedJson = JSON.parse(bodyContent);
+            const schema = generateSchema(parsedJson);
+
+            if (lastInteraction.type === 'req') {
+                paths[currentPath][currentMethod].requestBody = {
+                    content: { "application/json": { schema: schema } },
+                    required: true
+                };
+            } else if (lastInteraction.type === 'res' && lastInteraction.status) {
+                const status = lastInteraction.status;
+                if (paths[currentPath][currentMethod].responses[status]) {
+                    paths[currentPath][currentMethod].responses[status].content["application/json"].schema = schema;
+                }
+            }
+        } catch (e) {
+            // console.warn("Failed to parse body note JSON");
+        }
+      }
+    });
+
+    return { openapi: "3.0.0", info: { title: "Generated API", version: "1.0.0" }, paths: paths };
+  };
+
+  const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
+    let yaml = '';
+    const spaces = '  '.repeat(indent);
+    if (typeof obj !== 'object' || obj === null) return `${JSON.stringify(obj)}\n`;
+    const objectValue = obj as Record<string, unknown>;
+    for (const key in objectValue) {
+      const value = objectValue[key];
+      if (value === undefined) continue; 
+      if (typeof value === 'object' && value !== null) {
+        if (Array.isArray(value)) {
+            yaml += `${spaces}${key}:\n`;
+            value.forEach((item: unknown) => {
+                if (typeof item === 'object' && item !== null) {
+                    yaml += `${spaces}  - ${toYaml(item, indent + 2).trimStart()}`; 
+                } else {
+                    yaml += `${spaces}  - ${item}\n`;
+                }
+            });
+        } else if (Object.keys(value).length === 0) {
+          yaml += `${spaces}${key}: {}\n`;
+        } else {
+          yaml += `${spaces}${key}:\n${toYaml(value, indent + 1)}`;
+        }
+      } else {
+        yaml += `${spaces}${key}: ${JSON.stringify(value)}\n`;
+      }
+    }
+    return yaml;
+  };
+
+  // --- Effects ---
+  useEffect(() => {
+    try {
+      const resultObj = parseMermaidToOpenApi(mermaidCode);
+      if (Object.keys(resultObj.paths).length === 0) setParseError("No valid interactions found.");
+      else setParseError(null);
+      const safeResult = resultObj as unknown as Record<string, unknown>;
+      setOpenApiOutput(outputFormat === 'json' ? JSON.stringify(resultObj, null, 2) : toYaml(safeResult));
+    } catch (err) {
+      setParseError("Error parsing diagram.");
+    }
+  }, [mermaidCode, outputFormat]);
+
+  // --- Drag Logic ---
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isDraggingVertical.current && containerRef.current) {
       const containerRect = containerRef.current.getBoundingClientRect();
-      let newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
-      newWidth = Math.min(Math.max(newWidth, 20), 80);
+      const newWidth = Math.min(Math.max(((e.clientX - containerRect.left) / containerRect.width) * 100, 20), 80);
       setLeftWidth(newWidth);
     }
-
     if (isDraggingHorizontal.current && leftPaneRef.current) {
       const paneRect = leftPaneRef.current.getBoundingClientRect();
-      let newHeight = ((e.clientY - paneRect.top) / paneRect.height) * 100;
-      newHeight = Math.min(Math.max(newHeight, 20), 80);
+      const newHeight = Math.min(Math.max(((e.clientY - paneRect.top) / paneRect.height) * 100, 20), 80);
       setTopHeight(newHeight);
     }
   }, []);
@@ -281,215 +467,6 @@ export default function App() {
     };
   }, [handleMouseMove, handleMouseUp]);
 
-  const startVerticalDrag = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    isDraggingVertical.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none'; 
-  };
-
-  const startHorizontalDrag = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    isDraggingHorizontal.current = true;
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-  };
-
-
-  // --- The Parser Logic ---
-  const parseMermaidToOpenApi = (code: string): OpenApiDoc => {
-    const lines = code.split('\n');
-    const paths: Record<string, PathItem> = {};
-    
-    // State tracking
-    let currentPath: string | null = null;
-    let currentMethod: string | null = null;
-    let lastInteraction: { type: 'req' | 'res', status?: string } | null = null;
-    
-    // Patterns
-    const requestPattern = /->>.*?: ?(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD) ([^\s]+)(.*)/i;
-    const responsePattern = /-->>.*?: ?(\d{3})(.*)/;
-    const notePattern = /Note .*?: ?Body: ?(.+)/i;
-
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      
-      // 1. Check Request
-      const reqMatch = trimmed.match(requestPattern);
-      if (reqMatch) {
-        const method = reqMatch[1].toLowerCase();
-        const rawUrl = reqMatch[2]; 
-        const rawSummary = reqMatch[3] ? reqMatch[3].trim() : '';
-        
-        // Parse URL
-        let pathKey = rawUrl;
-        const detectedParams: Parameter[] = [];
-        if (rawUrl.includes('?')) {
-            const [p, q] = rawUrl.split('?');
-            pathKey = p;
-            if (q) {
-                const pairs = q.split('&');
-                pairs.forEach(pair => {
-                    const [key, val] = pair.split('=');
-                    if (key) {
-                        detectedParams.push({
-                            name: key,
-                            in: "query",
-                            schema: { type: "string", example: val || "" }
-                        });
-                    }
-                });
-            }
-        }
-        const paramMatches = pathKey.match(/\{([^}]+)\}/g);
-        if (paramMatches) {
-            paramMatches.forEach(p => {
-                const name = p.replace(/[{}]/g, '');
-                detectedParams.push({
-                    name: name,
-                    in: "path",
-                    required: true,
-                    schema: { type: "string" }
-                });
-            });
-        }
-
-        const summary = rawSummary || `Operation for ${pathKey}`;
-        if (!paths[pathKey]) paths[pathKey] = {};
-        
-        // Initialize Operation
-        paths[pathKey][method] = {
-          summary: summary,
-          parameters: detectedParams.length > 0 ? detectedParams : undefined,
-          responses: {}
-        };
-        
-        currentPath = pathKey;
-        currentMethod = method;
-        lastInteraction = { type: 'req' };
-        return;
-      }
-
-      // 2. Check Response
-      const resMatch = trimmed.match(responsePattern);
-      if (resMatch && currentPath && currentMethod) {
-        const status = resMatch[1];
-        const description = resMatch[2] ? resMatch[2].trim() : 'Response description';
-        
-        if (paths[currentPath][currentMethod]) {
-            if (!paths[currentPath][currentMethod].responses) {
-                paths[currentPath][currentMethod].responses = {};
-            }
-            // Default response
-            paths[currentPath][currentMethod].responses[status] = {
-                description: description,
-                content: { 
-                  "application/json": { 
-                    schema: { type: "object", example: {} } 
-                  } 
-                }
-            };
-        }
-        lastInteraction = { type: 'res', status: status };
-        return;
-      }
-
-      // 3. Check Note for Body Definition
-      const noteMatch = trimmed.match(notePattern);
-      if (noteMatch && currentPath && currentMethod && lastInteraction) {
-        const bodyContent = noteMatch[1].trim();
-        try {
-            // Attempt to parse JSON
-            const parsedJson = JSON.parse(bodyContent);
-            const schema = generateSchema(parsedJson);
-
-            if (lastInteraction.type === 'req') {
-                // Attach to Request Body
-                paths[currentPath][currentMethod].requestBody = {
-                    content: {
-                        "application/json": { schema: schema }
-                    },
-                    required: true
-                };
-            } else if (lastInteraction.type === 'res' && lastInteraction.status) {
-                // Attach to Response Body
-                const status = lastInteraction.status;
-                if (paths[currentPath][currentMethod].responses[status]) {
-                    paths[currentPath][currentMethod].responses[status].content["application/json"].schema = schema;
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to parse body note JSON", e);
-        }
-      }
-    });
-
-    return {
-      openapi: "3.0.0",
-      info: { title: "Generated API", version: "1.0.0" },
-      paths: paths
-    };
-  };
-
-  const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
-    let yaml = '';
-    const spaces = '  '.repeat(indent);
-    
-    if (typeof obj !== 'object' || obj === null) {
-      return `${JSON.stringify(obj)}\n`;
-    }
-
-    const objectValue = obj as Record<string, unknown>;
-
-    for (const key in objectValue) {
-      const value = objectValue[key];
-      if (value === undefined) continue; 
-      
-      if (typeof value === 'object' && value !== null) {
-        if (Array.isArray(value)) {
-            yaml += `${spaces}${key}:\n`;
-            value.forEach((item: unknown) => {
-                if (typeof item === 'object' && item !== null) {
-                    const itemYaml = toYaml(item, indent + 2).trimStart();
-                    yaml += `${spaces}  - ${itemYaml}`; 
-                } else {
-                    yaml += `${spaces}  - ${item}\n`;
-                }
-            });
-        } else if (Object.keys(value).length === 0) {
-          yaml += `${spaces}${key}: {}\n`;
-        } else {
-          yaml += `${spaces}${key}:\n${toYaml(value, indent + 1)}`;
-        }
-      } else {
-        yaml += `${spaces}${key}: ${JSON.stringify(value)}\n`;
-      }
-    }
-    return yaml;
-  };
-
-  useEffect(() => {
-    try {
-      const resultObj = parseMermaidToOpenApi(mermaidCode);
-      if (Object.keys(resultObj.paths).length === 0) {
-        setParseError("No valid interactions found.");
-      } else {
-        setParseError(null);
-      }
-      
-      const safeResult = resultObj as unknown as Record<string, unknown>;
-
-      if (outputFormat === 'json') {
-        setOpenApiOutput(JSON.stringify(resultObj, null, 2));
-      } else {
-        setOpenApiOutput(toYaml(safeResult));
-      }
-    } catch (err) {
-      setParseError("Error parsing diagram.");
-    }
-  }, [mermaidCode, outputFormat]);
-
   const handleCopy = () => {
     const textarea = document.createElement('textarea');
     textarea.value = openApiOutput;
@@ -500,114 +477,98 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const insertExample = () => {
-    setMermaidCode(`sequenceDiagram
-    participant Client
-    participant API
-    
-    Note over Client, API: Validation Examples
-    
-    Client->>API: POST /users/create
-    Note right of Client: Body: { "username": "string, required, min:5", "age": "integer, min:18, max:99", "email": "string, required, format:email" }
-    API-->>Client: 201 { "id": 123, "status": "created" }
-    
-    Client->>API: PUT /products/{id}
-    Note right of Client: Body: { "tags": ["array", "string"], "stock": 50 }
-    API-->>Client: 200 { "updated": true }`);
-  };
+  const handleLoadExample = (code: string) => {
+      setMermaidCode(code);
+      setActiveTab('editor');
+  }
 
   return (
     <div className="h-screen bg-slate-50 text-slate-800 font-sans flex flex-col overflow-hidden">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-2 rounded-lg text-white shadow-sm">
-            <ArrowRightLeft size={20} />
-          </div>
+          <div className="bg-blue-600 p-2 rounded-lg text-white shadow-sm"><ArrowRightLeft size={20} /></div>
           <div>
             <h1 className="text-xl font-bold text-slate-900">Mermaid to OpenAPI</h1>
           </div>
         </div>
-        
         <div className="flex gap-3">
-           <button 
-            onClick={() => setActiveTab(activeTab === 'guide' ? 'editor' : 'guide')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'guide' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            <BookOpen size={16} /> {activeTab === 'guide' ? 'Back' : 'Guide'}
-          </button>
-          <button onClick={insertExample} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-sm font-medium transition-colors">
-            <Play size={16} /> Example
+           <button onClick={() => setActiveTab(activeTab === 'guide' ? 'editor' : 'guide')} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'guide' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <BookOpen size={16} /> {activeTab === 'guide' ? 'Back to Editor' : 'Documentation'}
           </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative" ref={containerRef}>
-        
         {activeTab === 'guide' ? (
-          <div className="w-full h-full overflow-auto p-8 max-w-4xl mx-auto">
-             <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-2xl font-bold mb-6 text-blue-600">Syntax Guide</h2>
-                <div className="space-y-6 text-slate-700">
-                  <div className="border-b pb-4">
-                    <h3 className="font-bold text-lg mb-2">1. Request & Response</h3>
-                    <code className="block bg-slate-100 p-2 rounded mb-2">User-&gt;&gt;API: POST /path</code>
-                    <code className="block bg-slate-100 p-2 rounded">API--&gt;&gt;User: 200 OK</code>
-                  </div>
-                  
-                  <div className="border-b pb-4">
-                    <h3 className="font-bold text-lg mb-2">2. Body & Validation</h3>
-                    <p className="mb-2 text-sm">Add a note starting with <code>Body:</code> immediately after a request or response.</p>
-                    <code className="block bg-slate-100 p-2 rounded mb-2">Note right of User: Body: &#123; "key": "rule" &#125;</code>
-                    
-                    <h4 className="font-semibold mt-3 text-sm">Validation Rules (String Format):</h4>
-                    <ul className="list-disc list-inside text-sm space-y-1 mt-1">
-                        <li><code>"string, required"</code></li>
-                        <li><code>"integer, min:10, max:20"</code></li>
-                        <li><code>"string, format:email"</code></li>
-                        <li><code>"string, min:5"</code> (interpreted as minLength)</li>
-                    </ul>
-                    
-                    <h4 className="font-semibold mt-3 text-sm">Implicit Inference:</h4>
-                    <p className="text-sm">Use literal values to infer types automatically:</p>
-                    <code className="block bg-slate-100 p-2 rounded mt-1 text-xs">Body: &#123; "age": 25, "active": true &#125;</code>
-                  </div>
+          <div className="w-full h-full overflow-auto bg-slate-50">
+             <div className="max-w-4xl mx-auto p-8">
+                <div className="mb-8">
+                    <h2 className="text-3xl font-bold text-slate-800 mb-2">Documentation & Recipes</h2>
+                    <p className="text-slate-600">Copy these snippets to get started with common API patterns.</p>
                 </div>
+
+                <GuideSection 
+                    title="1. Basic GET Request" 
+                    description="The simplest interaction. A request followed by a response." 
+                    onApply={handleLoadExample}
+                    code={`sequenceDiagram
+User->>API: GET /status
+API-->>User: 200 { "status": "online" }`} 
+                />
+
+                <GuideSection 
+                    title="2. Path & Query Parameters" 
+                    description="Use {curly} braces for path parameters. Use ?key=value for query parameters. The types are inferred automatically." 
+                    onApply={handleLoadExample}
+                    code={`sequenceDiagram
+User->>API: GET /users/{id}/history?limit=10&sort=desc
+Note right of User: {id} becomes path param, limit/sort become query params
+API-->>User: 200 OK`} 
+                />
+
+                <GuideSection 
+                    title="3. POST with Body (Auto-Inference)" 
+                    description="Provide a JSON example in a Note starting with 'Body:'. The parser detects Integers, Floats, Booleans, and Strings automatically." 
+                    onApply={handleLoadExample}
+                    code={`sequenceDiagram
+User->>API: POST /products
+Note right of User: Body: { "name": "Widget", "price": 9.99, "inStock": true }
+API-->>User: 201 Created`} 
+                />
+
+                <GuideSection 
+                    title="4. POST with Arrays" 
+                    description="You can define arrays in the body. The parser infers the schema from the first item." 
+                    onApply={handleLoadExample}
+                    code={`sequenceDiagram
+User->>API: POST /tags/bulk-add
+Note right of User: Body: { "ids": [101, 102, 103], "names": ["new", "featured"] }
+API-->>User: 200 OK`} 
+                />
+
+                <GuideSection 
+                    title="5. Advanced Validation Rules" 
+                    description="If you need specific constraints, use a string with 'required', 'min:', 'max:', or 'format:'." 
+                    onApply={handleLoadExample}
+                    code={`sequenceDiagram
+User->>API: POST /register
+Note right of User: Body: { "email": "string, required, format:email", "age": "integer, min:18" }
+API-->>User: 201 Created`} 
+                />
              </div>
           </div>
         ) : (
           <div className="flex w-full h-full">
-            
-            {/* LEFT PANE */}
-            <div 
-                ref={leftPaneRef}
-                className="flex flex-col h-full min-w-[200px]"
-                style={{ width: `${leftWidth}%` }}
-            >
-                {/* Editor */}
+            <div ref={leftPaneRef} className="flex flex-col h-full min-w-[200px]" style={{ width: `${leftWidth}%` }}>
                 <div className="flex flex-col min-h-[100px]" style={{ height: `${topHeight}%` }}>
                     <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
                         <span className="text-xs font-bold text-slate-500 uppercase">Mermaid Input</span>
                     </div>
-                    <textarea
-                        value={mermaidCode}
-                        onChange={(e) => setMermaidCode(e.target.value)}
-                        className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none text-slate-700 w-full"
-                        placeholder="Enter mermaid code..."
-                        spellCheck={false}
-                    />
+                    <textarea value={mermaidCode} onChange={(e) => setMermaidCode(e.target.value)} className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none text-slate-700 w-full" spellCheck={false} />
                 </div>
-
-                {/* Horizontal Resizer */}
-                <div 
-                    onMouseDown={startHorizontalDrag}
-                    className="h-3 bg-slate-100 hover:bg-blue-100 border-y border-slate-200 cursor-row-resize flex items-center justify-center shrink-0 z-10 transition-colors group"
-                >
+                <div onMouseDown={(e) => { e.preventDefault(); isDraggingHorizontal.current = true; document.body.style.cursor = 'row-resize'; }} className="h-3 bg-slate-100 hover:bg-blue-100 border-y border-slate-200 cursor-row-resize flex items-center justify-center shrink-0 z-10 transition-colors group">
                     <GripHorizontal size={16} className="text-slate-400 group-hover:text-blue-500" />
                 </div>
-
-                {/* Preview */}
                 <div className="flex-1 flex flex-col min-h-[100px] overflow-hidden bg-white">
                     <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
                         <span className="text-xs font-bold text-slate-500 uppercase">Diagram Preview</span>
@@ -617,16 +578,9 @@ export default function App() {
                     </div>
                 </div>
             </div>
-
-            {/* Vertical Resizer */}
-            <div 
-                onMouseDown={startVerticalDrag}
-                className="w-3 bg-slate-100 hover:bg-blue-100 border-x border-slate-200 cursor-col-resize flex items-center justify-center shrink-0 z-10 transition-colors group"
-            >
+            <div onMouseDown={(e) => { e.preventDefault(); isDraggingVertical.current = true; document.body.style.cursor = 'col-resize'; }} className="w-3 bg-slate-100 hover:bg-blue-100 border-x border-slate-200 cursor-col-resize flex items-center justify-center shrink-0 z-10 transition-colors group">
                 <GripVertical size={16} className="text-slate-400 group-hover:text-blue-500" />
             </div>
-
-            {/* RIGHT PANE */}
             <div className="flex-1 flex flex-col h-full bg-slate-900 text-slate-100 min-w-[200px]">
               <div className="px-4 py-2 bg-slate-800 border-b border-slate-700 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
@@ -641,11 +595,7 @@ export default function App() {
                   <button onClick={handleCopy} className="text-slate-400 hover:text-white">{copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}</button>
                 </div>
               </div>
-              <textarea
-                readOnly
-                value={openApiOutput}
-                className="flex-1 w-full bg-slate-900 p-4 font-mono text-sm text-green-300 focus:outline-none resize-none"
-              />
+              <textarea readOnly value={openApiOutput} className="flex-1 w-full bg-slate-900 p-4 font-mono text-sm text-green-300 focus:outline-none resize-none" />
             </div>
           </div>
         )}
