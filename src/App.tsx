@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { 
   ArrowRightLeft, 
   Copy, 
@@ -673,6 +674,7 @@ API-->>User: 201 Created`}
           </div>
         )}
       </main>
+      <Analytics />
     </div>
   );
 }
