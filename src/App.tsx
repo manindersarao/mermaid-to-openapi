@@ -16,11 +16,6 @@ import {
 import type {
   SchemaObject,
   Parameter,
-  MediaType,
-  ResponseContent,
-  RequestBody,
-  Operation,
-  PathItem,
   OpenApiDoc,
   MultiSpecDocs
 } from './types';
