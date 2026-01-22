@@ -17,45 +17,13 @@ import type { OpenApiDoc, MultiSpecDocs } from './types';
 import { tokenize } from './parser/mermaidLexer';
 import { parse } from './parser/mermaidParser';
 import { generateOpenApiSpecs } from './generators/openapiGenerator';
+import { toYaml } from './generators/yamlFormatter';
 
 // --- Type Definitions ---
 
 interface MermaidViewerProps {
   code: string;
 }
-
-// --- Helper Functions ---
-
-const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
-    let yaml = '';
-    const spaces = '  '.repeat(indent);
-    if (typeof obj !== 'object' || obj === null) return `${JSON.stringify(obj)}\n`;
-    const objectValue = obj as Record<string, unknown>;
-    for (const key in objectValue) {
-      const value = objectValue[key];
-      if (value === undefined) continue;
-      if (typeof value === 'object' && value !== null) {
-        if (Array.isArray(value)) {
-            yaml += `${spaces}${key}:\n`;
-            value.forEach((item: unknown) => {
-                if (typeof item === 'object' && item !== null) {
-                    yaml += `${spaces}  - ${toYaml(item, indent + 2).trimStart()}`;
-                } else {
-                    yaml += `${spaces}  - ${item}\n`;
-                }
-            });
-        } else if (Object.keys(value).length === 0) {
-          yaml += `${spaces}${key}: {}\n`;
-        } else {
-          yaml += `${spaces}${key}:\n${toYaml(value, indent + 1)}`;
-        }
-      } else {
-        yaml += `${spaces}${key}: ${JSON.stringify(value)}\n`;
-      }
-    }
-    return yaml;
-  };
-
 
 // --- Components ---
 
