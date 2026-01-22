@@ -201,7 +201,7 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
         try {
           const schema = generateSchema(body as Record<string, unknown>);
           specs[server].paths[cleanPath][normalizedMethod].responses[status].content['application/json'].schema = schema;
-        } catch (e) {
+        } catch {
           // If body parsing fails, keep default empty schema
         }
       }
@@ -215,7 +215,7 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
           content: { 'application/json': { schema } },
           required: true
         };
-      } catch (e) {
+      } catch {
         // If body parsing fails, skip request body
       }
     }

@@ -3,7 +3,7 @@ export interface SchemaObject {
   format?: string;
   properties?: Record<string, SchemaObject>;
   required?: string[];
-  example?: any;
+  example?: unknown;
   items?: SchemaObject;
   minimum?: number;
   maximum?: number;

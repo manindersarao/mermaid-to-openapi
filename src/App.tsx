@@ -220,8 +220,8 @@ export default function App() {
   useEffect(() => {
     try {
       const results = parseMermaidToOpenApi(mermaidCode);
-      if (Object.keys(results).length === 0) setParseError("No valid interactions found.");
-      else setParseError(null);
+      const hasError = Object.keys(results).length === 0;
+      setParseError(hasError ? "No valid interactions found." : null);
       setGeneratedSpecs(results);
     } catch (err) {
       setParseError("Error parsing diagram.");
