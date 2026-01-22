@@ -2,78 +2,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import {
   ArrowRightLeft,
-  Copy,
-  Check,
   AlertCircle,
   BookOpen,
   GripVertical,
   GripHorizontal,
   ChevronRight,
-  ChevronDown,
-  Server,
   FileCode
 } from 'lucide-react';
 import { ValidationErrors } from './components/ValidationErrors';
 import { MermaidViewer } from './components/MermaidViewer';
-import type { OpenApiDoc, MultiSpecDocs } from './types';
+import { CollapsibleSpec } from './components/CollapsibleSpec';
+import type { MultiSpecDocs } from './types';
 import type { ValidationResult } from './types';
 import { tokenize } from './parser/mermaidLexer';
 import { parse } from './parser/mermaidParser';
 import { generateOpenApiSpecs } from './generators/openapiGenerator';
-import { toYaml } from './generators/yamlFormatter';
 import { validateMermaidSyntax, validateOpenApiSpecs } from './validators';
 
 // --- Components ---
-
-const CollapsibleSpec = ({ title, content, format }: { title: string, content: OpenApiDoc, format: 'json' | 'yaml' }) => {
-    const [isOpen, setIsOpen] = useState(true);
-    const [copied, setCopied] = useState(false);
-
-    const textContent = format === 'json'
-        ? JSON.stringify(content, null, 2)
-        : toYaml(content as unknown as Record<string, unknown>);
-
-    const handleCopy = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const textarea = document.createElement('textarea');
-        textarea.value = textContent;
-        document.body.appendChild(textarea);
-        textarea.select();
-        try { document.execCommand('copy'); setCopied(true); } catch { /* ignore */ }
-        document.body.removeChild(textarea);
-        setTimeout(() => setCopied(false), 2000);
-    };
-
-    return (
-        <div className="border-b border-slate-700 bg-slate-800 last:border-b-0">
-            <div
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-700 transition-colors select-none"
-            >
-                <div className="flex items-center gap-2 text-slate-200 font-medium">
-                    {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    <Server size={16} className="text-blue-400" />
-                    <span>{title} API</span>
-                    <span className="text-xs bg-slate-600 px-2 py-0.5 rounded text-slate-300">{format.toUpperCase()}</span>
-                </div>
-                <button onClick={handleCopy} className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-600">
-                    {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
-                </button>
-            </div>
-
-            {isOpen && (
-                <div className="h-96 relative border-t border-slate-700">
-                     <textarea
-                        readOnly
-                        value={textContent}
-                        className="w-full h-full bg-slate-900 p-4 font-mono text-sm text-green-300 focus:outline-none resize-none"
-                        spellCheck={false}
-                    />
-                </div>
-            )}
-        </div>
-    );
-};
 
 const GuideSection = ({ title, description, code, onApply }: { title: string, description: string, code: string, onApply: (c: string) => void }) => (
     <div className="mb-8 border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
