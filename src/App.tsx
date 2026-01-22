@@ -8,10 +8,7 @@ import {
   GripHorizontal,
   FileCode
 } from 'lucide-react';
-import { ValidationErrors } from './components/ValidationErrors';
-import { MermaidViewer } from './components/MermaidViewer';
-import { CollapsibleSpec } from './components/CollapsibleSpec';
-import { GuideSection } from './components/GuideSection';
+import { ValidationErrors, MermaidViewer, CollapsibleSpec, GuideSection } from './components';
 import type { MultiSpecDocs } from './types';
 import type { ValidationResult } from './types';
 import { tokenize } from './parser/mermaidLexer';
