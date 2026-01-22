@@ -13,11 +13,14 @@ import {
   Server,
   FileCode
 } from 'lucide-react';
+import { ValidationErrors } from './components/ValidationErrors';
 import type { OpenApiDoc, MultiSpecDocs } from './types';
+import type { ValidationResult } from './types';
 import { tokenize } from './parser/mermaidLexer';
 import { parse } from './parser/mermaidParser';
 import { generateOpenApiSpecs } from './generators/openapiGenerator';
 import { toYaml } from './generators/yamlFormatter';
+import { validateMermaidSyntax, validateOpenApiSpecs } from './validators';
 
 // --- Type Definitions ---
 
@@ -41,7 +44,7 @@ const CollapsibleSpec = ({ title, content, format }: { title: string, content: O
         textarea.value = textContent;
         document.body.appendChild(textarea);
         textarea.select();
-        try { document.execCommand('copy'); setCopied(true); } catch (e) {}
+        try { document.execCommand('copy'); setCopied(true); } catch { /* ignore */ }
         document.body.removeChild(textarea);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -83,22 +86,23 @@ const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
 
   useEffect(() => {
     try {
-      const jsonString = JSON.stringify({ 
-        code: code, 
-        mermaid: { 
-          theme: 'default', 
+      const jsonString = JSON.stringify({
+        code: code,
+        mermaid: {
+          theme: 'default',
           securityLevel: 'loose',
           sequence: { showSequenceNumbers: true }
-        } 
+        }
       });
-      
+
       const utf8Bytes = new TextEncoder().encode(jsonString);
       const binaryString = Array.from(utf8Bytes, byte => String.fromCodePoint(byte)).join("");
       const b64 = window.btoa(binaryString);
-      
+
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing URL generation with code prop
       setImgUrl(`https://mermaid.ink/img/${b64}`);
       setError(false);
-    } catch (e) {
+    } catch {
       setError(true);
     }
   }, [code]);
@@ -164,6 +168,8 @@ export default function App() {
   const [outputFormat, setOutputFormat] = useState<'yaml' | 'json'>('yaml');
   const [activeTab, setActiveTab] = useState<'editor' | 'guide'>('editor');
   const [parseError, setParseError] = useState<string | null>(null);
+  const [mermaidValidation, setMermaidValidation] = useState<ValidationResult | null>(null);
+  const [openapiValidation, setOpenapiValidation] = useState<ValidationResult | null>(null);
 
   // Layout State
   const [leftWidth, setLeftWidth] = useState<number>(50); 
@@ -173,26 +179,42 @@ export default function App() {
   const isDraggingVertical = useRef<boolean>(false);
   const isDraggingHorizontal = useRef<boolean>(false);
 
-  // --- Parser Logic ---
-  const parseMermaidToOpenApi = (code: string): MultiSpecDocs => {
-    try {
-      const tokens = tokenize(code);
-      const ast = parse(tokens);
-      return generateOpenApiSpecs(ast);
-    } catch (err) {
-      return {};
-    }
-  };
-
   // --- Effects ---
   useEffect(() => {
+    // Validate Mermaid input
+    const mermaidResult = validateMermaidSyntax(mermaidCode);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing parsing with code input
+    setMermaidValidation(mermaidResult);
+
+    // If Mermaid validation has errors, don't proceed
+    if (!mermaidResult.valid) {
+      setParseError('Mermaid syntax validation failed');
+      setGeneratedSpecs({});
+      return;
+    }
+
+    // Tokenize and parse
     try {
-      const results = parseMermaidToOpenApi(mermaidCode);
-      const hasError = Object.keys(results).length === 0;
-      setParseError(hasError ? "No valid interactions found." : null);
-      setGeneratedSpecs(results);
+      const tokens = tokenize(mermaidCode);
+      const ast = parse(tokens);
+
+      // Generate OpenAPI specs
+      const specs = generateOpenApiSpecs(ast);
+      setGeneratedSpecs(specs);
+
+      // Validate generated OpenAPI specs
+      const openapiResult = validateOpenApiSpecs(specs);
+      setOpenapiValidation(openapiResult);
+
+      // If OpenAPI validation has errors, still show specs but warn user
+      if (!openapiResult.valid) {
+        setParseError('OpenAPI validation failed - specs may be invalid');
+      } else {
+        setParseError(null);
+      }
     } catch (err) {
-      setParseError("Error parsing diagram.");
+      setParseError(err instanceof Error ? err.message : 'Error parsing diagram');
+      setGeneratedSpecs({});
     }
   }, [mermaidCode]);
 
@@ -333,6 +355,17 @@ API-->>User: 201 Created`}
                 </div>
               </div>
               <div className="flex-1 w-full bg-slate-900 overflow-y-auto">
+                {/* Validation Errors Display */}
+                <div className="p-4">
+                  <ValidationErrors
+                    validation={mermaidValidation}
+                    onClose={() => setMermaidValidation(null)}
+                  />
+                  <ValidationErrors
+                    validation={openapiValidation}
+                    onClose={() => setOpenapiValidation(null)}
+                  />
+                </div>
                  {serverNames.length === 0 ? (
                      <div className="p-8 text-center text-slate-500 flex flex-col items-center gap-2">
                          <FileCode size={32} className="opacity-50" />
