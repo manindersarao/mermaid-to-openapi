@@ -14,6 +14,7 @@ import {
   FileCode
 } from 'lucide-react';
 import { ValidationErrors } from './components/ValidationErrors';
+import { MermaidViewer } from './components/MermaidViewer';
 import type { OpenApiDoc, MultiSpecDocs } from './types';
 import type { ValidationResult } from './types';
 import { tokenize } from './parser/mermaidLexer';
@@ -22,20 +23,14 @@ import { generateOpenApiSpecs } from './generators/openapiGenerator';
 import { toYaml } from './generators/yamlFormatter';
 import { validateMermaidSyntax, validateOpenApiSpecs } from './validators';
 
-// --- Type Definitions ---
-
-interface MermaidViewerProps {
-  code: string;
-}
-
 // --- Components ---
 
 const CollapsibleSpec = ({ title, content, format }: { title: string, content: OpenApiDoc, format: 'json' | 'yaml' }) => {
     const [isOpen, setIsOpen] = useState(true);
     const [copied, setCopied] = useState(false);
 
-    const textContent = format === 'json' 
-        ? JSON.stringify(content, null, 2) 
+    const textContent = format === 'json'
+        ? JSON.stringify(content, null, 2)
         : toYaml(content as unknown as Record<string, unknown>);
 
     const handleCopy = (e: React.MouseEvent) => {
@@ -51,7 +46,7 @@ const CollapsibleSpec = ({ title, content, format }: { title: string, content: O
 
     return (
         <div className="border-b border-slate-700 bg-slate-800 last:border-b-0">
-            <div 
+            <div
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-700 transition-colors select-none"
             >
@@ -65,12 +60,12 @@ const CollapsibleSpec = ({ title, content, format }: { title: string, content: O
                     {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
                 </button>
             </div>
-            
+
             {isOpen && (
                 <div className="h-96 relative border-t border-slate-700">
-                     <textarea 
-                        readOnly 
-                        value={textContent} 
+                     <textarea
+                        readOnly
+                        value={textContent}
                         className="w-full h-full bg-slate-900 p-4 font-mono text-sm text-green-300 focus:outline-none resize-none"
                         spellCheck={false}
                     />
@@ -78,56 +73,6 @@ const CollapsibleSpec = ({ title, content, format }: { title: string, content: O
             )}
         </div>
     );
-};
-
-const MermaidViewer: React.FC<MermaidViewerProps> = ({ code }) => {
-  const [imgUrl, setImgUrl] = useState<string>('');
-  const [error, setError] = useState<boolean>(false);
-
-  useEffect(() => {
-    try {
-      const jsonString = JSON.stringify({
-        code: code,
-        mermaid: {
-          theme: 'default',
-          securityLevel: 'loose',
-          sequence: { showSequenceNumbers: true }
-        }
-      });
-
-      const utf8Bytes = new TextEncoder().encode(jsonString);
-      const binaryString = Array.from(utf8Bytes, byte => String.fromCodePoint(byte)).join("");
-      const b64 = window.btoa(binaryString);
-
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing URL generation with code prop
-      setImgUrl(`https://mermaid.ink/img/${b64}`);
-      setError(false);
-    } catch {
-      setError(true);
-    }
-  }, [code]);
-
-  if (error) return (
-    <div className="flex items-center justify-center p-8 text-red-400 text-sm bg-red-50/50 rounded border border-red-100">
-      <AlertCircle size={16} className="mr-2" /> Unable to render diagram.
-    </div>
-  );
-  
-  return (
-    <div className="w-full h-full bg-white overflow-auto flex justify-center items-start p-4">
-      {code ? (
-        <img 
-            src={imgUrl} 
-            alt="Mermaid Diagram" 
-            className="max-w-none shadow-sm" 
-            loading="lazy"
-            onError={() => setError(true)} 
-        />
-      ) : (
-        <span className="text-slate-400 text-sm">Diagram preview</span>
-      )}
-    </div>
-  );
 };
 
 const GuideSection = ({ title, description, code, onApply }: { title: string, description: string, code: string, onApply: (c: string) => void }) => (
