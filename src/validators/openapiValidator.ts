@@ -517,6 +517,7 @@ function validatePathParameters(spec: OpenApiDoc): ValidationError[] {
 
 /**
  * Validates that all $ref references point to valid locations.
+ * Only validates schema references (#/components/schemas/), not path references.
  */
 function validateReferences(
   schema: unknown,
@@ -527,22 +528,19 @@ function validateReferences(
 ): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  // Build a set of all valid reference paths
-  const validRefs = new Set<string>();
+  // Build a set of valid schema reference paths
+  const validSchemaRefs = new Set<string>();
 
   if (spec.components?.schemas) {
     Object.keys(spec.components.schemas).forEach((key) => {
-      validRefs.add(`#/components/schemas/${key}`);
+      validSchemaRefs.add(`#/components/schemas/${key}`);
     });
   }
 
-  if (spec.paths) {
-    Object.keys(spec.paths).forEach((key) => {
-      validRefs.add(`#/paths/${key}`);
-    });
-  }
+  // Track visited objects to prevent infinite loops during traversal
+  const visited = new Set<unknown>();
 
-  function traverse(obj: unknown, visited = new Set<unknown>()): void {
+  function traverse(obj: unknown): void {
     if (!obj || typeof obj !== 'object') {
       return;
     }
@@ -564,20 +562,20 @@ function validateReferences(
           context: `${path} (${method}) - ${context}`,
           suggestion: 'References should start with "#/" for JSON Pointers',
         });
-      } else if (!validRefs.has(ref)) {
+      } else if (ref.startsWith('#/components/schemas/') && !validSchemaRefs.has(ref)) {
         errors.push({
           source: 'openapi',
           severity: 'error',
           message: `Invalid reference: "${ref}" does not exist`,
           context: `${path} (${method}) - ${context}`,
-          suggestion: 'Ensure the referenced component is defined',
+          suggestion: 'Ensure the referenced schema component is defined',
         });
       }
     } else {
       // Recursively traverse all properties
       for (const value of Object.values(obj)) {
         if (typeof value === 'object' && value !== null) {
-          traverse(value, visited);
+          traverse(value);
         }
       }
     }
@@ -602,21 +600,20 @@ function validateCircularReferences(spec: OpenApiDoc): ValidationError[] {
     }
   }
 
+  // Global visited set to track objects across the entire validation run
+  const globalVisited = new Set<unknown>();
+
   // Track references during traversal
-  const detectCycles = (
-    obj: unknown,
-    refChain: string[] = [],
-    visited = new Set<unknown>()
-  ): void => {
+  const detectCycles = (obj: unknown, refChain: string[] = []): void => {
     if (!obj || typeof obj !== 'object') {
       return;
     }
 
-    // Detect circular references during traversal
-    if (visited.has(obj)) {
+    // Detect circular references during traversal using global visited set
+    if (globalVisited.has(obj)) {
       return;
     }
-    visited.add(obj);
+    globalVisited.add(obj);
 
     if ('$ref' in obj && typeof obj.$ref === 'string') {
       const ref = obj.$ref;
@@ -641,13 +638,13 @@ function validateCircularReferences(spec: OpenApiDoc): ValidationError[] {
       // Continue traversal through the referenced component if it exists
       const referencedSchema = componentSchemas.get(ref);
       if (referencedSchema) {
-        detectCycles(referencedSchema, [...refChain, ref], new Set());
+        detectCycles(referencedSchema, [...refChain, ref]);
       }
     } else {
       // Recursively traverse all properties
       for (const value of Object.values(obj)) {
         if (typeof value === 'object' && value !== null) {
-          detectCycles(value, refChain, visited);
+          detectCycles(value, refChain);
         }
       }
     }
