@@ -13,12 +13,10 @@ import {
   Server,
   FileCode
 } from 'lucide-react';
-import type {
-  SchemaObject,
-  Parameter,
-  OpenApiDoc,
-  MultiSpecDocs
-} from './types';
+import type { OpenApiDoc, MultiSpecDocs } from './types';
+import { tokenize } from './parser/mermaidLexer';
+import { parse } from './parser/mermaidParser';
+import { generateOpenApiSpecs } from './generators/openapiGenerator';
 
 // --- Type Definitions ---
 
@@ -28,96 +26,6 @@ interface MermaidViewerProps {
 
 // --- Helper Functions ---
 
-const parseSchemaFromValue = (value: any): { schema: SchemaObject, isRequired: boolean } => {
-  const schema: SchemaObject = { type: 'string' };
-  let isRequired = false;
-
-  // 1. Handle Explicit Validation Strings
-  if (typeof value === 'string') {
-    const parts = value.split(',').map(s => s.trim());
-    const validTypes = ['string', 'integer', 'number', 'boolean', 'array', 'object'];
-    
-    const explicitType = validTypes.includes(parts[0]) ? parts[0] : null;
-    const isDefinition = explicitType || parts.some(p => p === 'required' || p.includes(':'));
-
-    if (isDefinition) {
-      schema.type = explicitType || 'string';
-      parts.forEach(part => {
-        if (part === 'required') isRequired = true;
-        else if (part.startsWith('min:')) {
-          const val = Number(part.split(':')[1]);
-          if (schema.type === 'string') schema.minLength = val;
-          else schema.minimum = val;
-        }
-        else if (part.startsWith('max:')) {
-          const val = Number(part.split(':')[1]);
-          if (schema.type === 'string') schema.maxLength = val;
-          else schema.maximum = val;
-        }
-        else if (part.startsWith('format:')) {
-          schema.format = part.split(':')[1];
-        }
-        else if (part.startsWith('example:')) {
-          schema.example = part.split(':')[1];
-        }
-      });
-      return { schema, isRequired };
-    }
-  }
-
-  // 2. Auto-Inference
-  if (value === null) {
-     schema.type = 'string'; 
-  } else if (typeof value === 'number') {
-    schema.type = Number.isInteger(value) ? 'integer' : 'number';
-    schema.example = value;
-  } else if (typeof value === 'boolean') {
-    schema.type = 'boolean';
-    schema.example = value;
-  } else if (Array.isArray(value)) {
-    schema.type = 'array';
-    if (value.length > 0) {
-        schema.items = parseSchemaFromValue(value[0]).schema;
-    } else {
-        schema.items = { type: 'string' };
-    }
-    schema.example = value;
-  } else if (typeof value === 'object') {
-    schema.type = 'object';
-  } else {
-    schema.type = 'string';
-    schema.example = value;
-  }
-
-  return { schema, isRequired };
-};
-
-const generateSchema = (jsonObj: Record<string, any>): SchemaObject => {
-  const properties: Record<string, SchemaObject> = {};
-  const requiredFields: string[] = [];
-
-  for (const [key, value] of Object.entries(jsonObj)) {
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      properties[key] = generateSchema(value);
-    } else {
-      const { schema, isRequired } = parseSchemaFromValue(value);
-      properties[key] = schema;
-      if (isRequired) requiredFields.push(key);
-    }
-  }
-
-  const result: SchemaObject = {
-    type: 'object',
-    properties
-  };
-
-  if (requiredFields.length > 0) {
-    result.required = requiredFields;
-  }
-
-  return result;
-};
-
 const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
     let yaml = '';
     const spaces = '  '.repeat(indent);
@@ -125,13 +33,13 @@ const toYaml = (obj: Record<string, unknown> | unknown, indent = 0): string => {
     const objectValue = obj as Record<string, unknown>;
     for (const key in objectValue) {
       const value = objectValue[key];
-      if (value === undefined) continue; 
+      if (value === undefined) continue;
       if (typeof value === 'object' && value !== null) {
         if (Array.isArray(value)) {
             yaml += `${spaces}${key}:\n`;
             value.forEach((item: unknown) => {
                 if (typeof item === 'object' && item !== null) {
-                    yaml += `${spaces}  - ${toYaml(item, indent + 2).trimStart()}`; 
+                    yaml += `${spaces}  - ${toYaml(item, indent + 2).trimStart()}`;
                 } else {
                     yaml += `${spaces}  - ${item}\n`;
                 }
@@ -299,154 +207,13 @@ export default function App() {
 
   // --- Parser Logic ---
   const parseMermaidToOpenApi = (code: string): MultiSpecDocs => {
-    const lines = code.split('\n');
-    
-    // We now maintain a dictionary of specs, one for each server participant
-    const specs: MultiSpecDocs = {};
-    
-    // State tracking
-    let currentPath: string | null = null;
-    let currentMethod: string | null = null;
-    // Track which server is handling the current active request
-    let activeServer: string | null = null; 
-    
-    // Track context for Notes: { type, status, server }
-    let lastInteraction: { type: 'req' | 'res', status?: string, server: string } | null = null;
-    
-    // Updated Regex to capture Source and Target
-    // Matches: Source ->> Target: METHOD URL Description
-    const requestPattern = /^\s*([^-]+?)\s*->>\s*([^:]+?):\s?(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s+([^\s]+)(.*)/i;
-    const responsePattern = /-->>.*?: ?(\d{3})(.*)/;
-    const notePattern = /Note .*?: ?Body: ?(.+)/i;
-
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      
-      // 1. Request Logic
-      const reqMatch = trimmed.match(requestPattern);
-      if (reqMatch) {
-        // const source = reqMatch[1].trim(); // Unused for spec generation but useful for logic
-        const targetServer = reqMatch[2].trim(); // This is the API Owner
-        const method = reqMatch[3].toLowerCase();
-        const rawUrl = reqMatch[4]; 
-        const rawSummary = reqMatch[5] ? reqMatch[5].trim() : '';
-        
-        // Initialize Spec for this Server if not exists
-        if (!specs[targetServer]) {
-            specs[targetServer] = {
-                openapi: "3.0.0",
-                info: { title: `${targetServer} API`, version: "1.0.0" },
-                paths: {}
-            };
-        }
-
-        // Parse URL
-        let pathKey = rawUrl;
-        const detectedParams: Parameter[] = [];
-        if (rawUrl.includes('?')) {
-            const [p, q] = rawUrl.split('?');
-            pathKey = p;
-            if (q) {
-                const pairs = q.split('&');
-                pairs.forEach(pair => {
-                    const [key, val] = pair.split('=');
-                    if (key) {
-                        detectedParams.push({
-                            name: key,
-                            in: "query",
-                            schema: { type: "string", example: val || "" }
-                        });
-                    }
-                });
-            }
-        }
-        const paramMatches = pathKey.match(/\{([^}]+)\}/g);
-        if (paramMatches) {
-            paramMatches.forEach(p => {
-                const name = p.replace(/[{}]/g, '');
-                detectedParams.push({
-                    name: name,
-                    in: "path",
-                    required: true,
-                    schema: { type: "string" }
-                });
-            });
-        }
-
-        const summary = rawSummary || `Operation for ${pathKey}`;
-        
-        // Initialize Path Structure
-        if (!specs[targetServer].paths[pathKey]) {
-            specs[targetServer].paths[pathKey] = {};
-        }
-
-        specs[targetServer].paths[pathKey][method] = {
-          summary: summary,
-          parameters: detectedParams.length > 0 ? detectedParams : undefined,
-          responses: {}
-        };
-        
-        // Update Context
-        currentPath = pathKey;
-        currentMethod = method;
-        activeServer = targetServer;
-        lastInteraction = { type: 'req', server: targetServer };
-        return;
-      }
-
-      // 2. Response Logic
-      const resMatch = trimmed.match(responsePattern);
-      if (resMatch && currentPath && currentMethod && activeServer) {
-        const status = resMatch[1];
-        const description = resMatch[2] ? resMatch[2].trim() : 'Response description';
-        
-        // Ensure we are adding response to the correct server's spec
-        if (specs[activeServer]?.paths[currentPath]?.[currentMethod]) {
-             const op = specs[activeServer].paths[currentPath][currentMethod];
-             if (!op.responses) op.responses = {};
-             
-             op.responses[status] = {
-                description: description,
-                content: { "application/json": { schema: { type: "object", example: {} } } }
-            };
-        }
-        lastInteraction = { type: 'res', status: status, server: activeServer };
-        return;
-      }
-
-      // 3. Body Note Logic
-      const noteMatch = trimmed.match(notePattern);
-      if (noteMatch && currentPath && currentMethod && lastInteraction) {
-        const bodyContent = noteMatch[1].trim();
-        const targetSpec = specs[lastInteraction.server];
-
-        try {
-            const parsedJson = JSON.parse(bodyContent);
-            const schema = generateSchema(parsedJson);
-
-            if (targetSpec && targetSpec.paths[currentPath] && targetSpec.paths[currentPath][currentMethod]) {
-                 const op = targetSpec.paths[currentPath][currentMethod];
-
-                if (lastInteraction.type === 'req') {
-                    op.requestBody = {
-                        content: { "application/json": { schema: schema } },
-                        required: true
-                    };
-                } else if (lastInteraction.type === 'res' && lastInteraction.status) {
-                    const status = lastInteraction.status;
-                    if (op.responses[status]) {
-                        op.responses[status].content["application/json"].schema = schema;
-                    }
-                }
-            }
-        } catch (e) {
-            // ignore parse errors in notes
-        }
-      }
-    });
-
-    return specs;
+    try {
+      const tokens = tokenize(code);
+      const ast = parse(tokens);
+      return generateOpenApiSpecs(ast);
+    } catch (err) {
+      return {};
+    }
   };
 
   // --- Effects ---
