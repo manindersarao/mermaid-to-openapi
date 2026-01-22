@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { MermaidToken, MermaidAST, Interaction, Note } from '@/types/mermaid';
+import type { MermaidToken, MermaidAST, Interaction, Note, ParserWarning } from '@/types/mermaid';
 
 describe('Mermaid Types', () => {
   describe('MermaidToken', () => {
@@ -69,8 +69,8 @@ describe('Mermaid Types', () => {
     it('should hold interactions and notes', () => {
       const interaction: Interaction = {
         type: 'request',
-        source: 'User',
-        target: 'API',
+        from: 'User',
+        to: 'API',
         line: 1
       };
       const note: Note = {
@@ -93,16 +93,16 @@ describe('Mermaid Types', () => {
     it('should create valid request interaction', () => {
       const interaction: Interaction = {
         type: 'request',
-        source: 'Client',
-        target: 'Server',
+        from: 'Client',
+        to: 'Server',
         method: 'POST',
         path: '/api/users',
         summary: 'Create user',
         line: 1
       };
       expect(interaction.type).toBe('request');
-      expect(interaction.source).toBe('Client');
-      expect(interaction.target).toBe('Server');
+      expect(interaction.from).toBe('Client');
+      expect(interaction.to).toBe('Server');
       expect(interaction.method).toBe('POST');
       expect(interaction.path).toBe('/api/users');
       expect(interaction.summary).toBe('Create user');
@@ -111,8 +111,8 @@ describe('Mermaid Types', () => {
     it('should create valid response interaction', () => {
       const interaction: Interaction = {
         type: 'response',
-        source: 'Server',
-        target: 'Client',
+        from: 'Server',
+        to: 'Client',
         status: '200',
         description: 'Success',
         line: 2
@@ -125,8 +125,8 @@ describe('Mermaid Types', () => {
     it('should handle optional fields', () => {
       const interaction: Interaction = {
         type: 'request',
-        source: 'A',
-        target: 'B',
+        from: 'A',
+        to: 'B',
         line: 1
       };
       expect(interaction.method).toBeUndefined();
@@ -137,8 +137,8 @@ describe('Mermaid Types', () => {
     it('should support context fields', () => {
       const interaction: Interaction = {
         type: 'request',
-        source: 'Client',
-        target: 'Server',
+        from: 'Client',
+        to: 'Server',
         line: 1,
         contextPath: '/api',
         contextMethod: 'GET',
@@ -158,13 +158,39 @@ describe('Mermaid Types', () => {
       };
       const interaction: Interaction = {
         type: 'request',
-        source: 'Client',
-        target: 'Server',
+        from: 'Client',
+        to: 'Server',
         line: 1,
         note
       };
       expect(interaction.note).toEqual(note);
       expect(interaction.note?.content).toBe('Important note');
+    });
+
+    it('should support response object', () => {
+      const interaction: Interaction = {
+        type: 'request',
+        from: 'Client',
+        to: 'Server',
+        line: 1,
+        response: {
+          status: '200',
+          description: 'Success'
+        }
+      };
+      expect(interaction.response?.status).toBe('200');
+      expect(interaction.response?.description).toBe('Success');
+    });
+
+    it('should support body property', () => {
+      const interaction: Interaction = {
+        type: 'request',
+        from: 'Client',
+        to: 'Server',
+        line: 1,
+        body: { id: '123' }
+      };
+      expect(interaction.body).toEqual({ id: '123' });
     });
   });
 
@@ -216,6 +242,41 @@ describe('Mermaid Types', () => {
       expect(note.content).toBeDefined();
       expect(note.type).toBeDefined();
       expect(note.line).toBeDefined();
+    });
+  });
+
+  describe('ParserWarning', () => {
+    it('should create valid warning', () => {
+      const warning: ParserWarning = {
+        type: 'warning',
+        line: 5,
+        message: 'orphaned response'
+      };
+      expect(warning.type).toBe('warning');
+      expect(warning.line).toBe(5);
+      expect(warning.message).toBe('orphaned response');
+    });
+
+    it('should create valid error', () => {
+      const error: ParserWarning = {
+        type: 'error',
+        line: 10,
+        message: 'Invalid JSON'
+      };
+      expect(error.type).toBe('error');
+      expect(error.line).toBe(10);
+      expect(error.message).toBe('Invalid JSON');
+    });
+
+    it('should require all fields', () => {
+      const warning: ParserWarning = {
+        type: 'warning',
+        line: 1,
+        message: 'Test warning'
+      };
+      expect(warning.type).toBeDefined();
+      expect(warning.line).toBeDefined();
+      expect(warning.message).toBeDefined();
     });
   });
 });

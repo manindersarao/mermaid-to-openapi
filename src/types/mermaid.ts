@@ -17,13 +17,13 @@ export interface MermaidToken {
 export interface MermaidAST {
   participants: string[];
   interactions: Interaction[];
-  notes: Note[];
+  notes: (Note | ParserWarning)[];
 }
 
 export interface Interaction {
   type: 'request' | 'response';
-  source: string;
-  target: string;
+  from: string;
+  to: string;
   method?: string;
   path?: string;
   status?: string;
@@ -31,6 +31,11 @@ export interface Interaction {
   summary?: string;
   line: number;
   note?: Note;
+  response?: {
+    status?: string;
+    description?: string;
+  };
+  body?: unknown;
   contextPath?: string;
   contextMethod?: string;
   contextServer?: string;
@@ -41,4 +46,10 @@ export interface Note {
   content: string;
   type: 'body' | 'info';
   line: number;
+}
+
+export interface ParserWarning {
+  type: 'warning' | 'error';
+  line: number;
+  message: string;
 }
