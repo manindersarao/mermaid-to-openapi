@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Analytics } from '@vercel/analytics/react';
-import { 
-  ArrowRightLeft, 
-  Copy, 
+import {
+  ArrowRightLeft,
+  Copy,
   Check,
   AlertCircle,
   BookOpen,
@@ -13,74 +13,23 @@ import {
   Server,
   FileCode
 } from 'lucide-react';
+import type {
+  SchemaObject,
+  Parameter,
+  MediaType,
+  ResponseContent,
+  RequestBody,
+  Operation,
+  PathItem,
+  OpenApiDoc,
+  MultiSpecDocs
+} from './types';
 
 // --- Type Definitions ---
 
 interface MermaidViewerProps {
   code: string;
 }
-
-interface SchemaObject {
-  type: string;
-  format?: string;
-  properties?: Record<string, SchemaObject>;
-  required?: string[];
-  example?: any;
-  items?: SchemaObject;
-  minimum?: number;
-  maximum?: number;
-  minLength?: number;
-  maxLength?: number;
-}
-
-interface Parameter {
-  name: string;
-  in: 'path' | 'query' | 'header' | 'cookie';
-  required?: boolean;
-  schema: SchemaObject;
-}
-
-interface MediaType {
-  schema: SchemaObject;
-}
-
-interface ResponseContent {
-  description: string;
-  content: {
-    "application/json": MediaType;
-  };
-}
-
-interface RequestBody {
-  content: {
-    "application/json": MediaType;
-  };
-  required?: boolean;
-}
-
-interface Operation {
-  summary: string;
-  parameters?: Parameter[];
-  requestBody?: RequestBody;
-  responses: Record<string, ResponseContent>;
-}
-
-interface PathItem {
-  [method: string]: Operation; 
-}
-
-interface OpenApiDoc {
-  openapi: string;
-  info: {
-    title: string;
-    version: string;
-    description?: string;
-  };
-  paths: Record<string, PathItem>;
-}
-
-// Dictionary of ServerName -> OpenApiDoc
-type MultiSpecDocs = Record<string, OpenApiDoc>;
 
 // --- Helper Functions ---
 
