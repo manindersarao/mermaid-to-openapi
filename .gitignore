@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Test coverage and mutation testing reports
+coverage/
+.reports/
+.stryker-tmp/
+reports/
+node_modules/.vite/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
