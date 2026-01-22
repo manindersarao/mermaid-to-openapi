@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Copy, Check, ChevronRight, ChevronDown, Server } from 'lucide-react';
 import type { OpenApiDoc } from '../types';
 import { toYaml } from '../generators/yamlFormatter';
@@ -17,26 +17,28 @@ export const CollapsibleSpec: React.FC<CollapsibleSpecProps> = ({
   const [isOpen, setIsOpen] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const textContent =
-    format === 'json'
+  const textContent = useMemo(() => {
+    return format === 'json'
       ? JSON.stringify(content, null, 2)
       : toYaml(content as unknown as Record<string, unknown>);
+  }, [content, format]);
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const textarea = document.createElement('textarea');
-    textarea.value = textContent;
-    document.body.appendChild(textarea);
-    textarea.select();
     try {
-      document.execCommand('copy');
+      await navigator.clipboard.writeText(textContent);
       setCopied(true);
     } catch {
       /* ignore */
     }
-    document.body.removeChild(textarea);
-    setTimeout(() => setCopied(false), 2000);
   };
+
+  useEffect(() => {
+    if (copied) {
+      const timer = setTimeout(() => setCopied(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [copied]);
 
   return (
     <div className="border-b border-slate-700 bg-slate-800 last:border-b-0">
@@ -79,3 +81,5 @@ export const CollapsibleSpec: React.FC<CollapsibleSpecProps> = ({
     </div>
   );
 };
+
+export const MemoizedCollapsibleSpec = React.memo(CollapsibleSpec);

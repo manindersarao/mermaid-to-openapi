@@ -161,25 +161,33 @@ describe('CollapsibleSpec', () => {
   });
 
   describe('copy to clipboard functionality', () => {
+    const mockClipboard = {
+      writeText: vi.fn().mockResolvedValue(undefined),
+    };
+
     beforeEach(() => {
-      vi.useFakeTimers();
-      // Mock document.execCommand
-      Object.defineProperty(document, 'execCommand', {
-        writable: true,
-        value: vi.fn().mockReturnValue(true),
-      });
+      // Mock navigator.clipboard
+      Object.assign(navigator, { clipboard: mockClipboard });
     });
 
     afterEach(() => {
-      vi.useRealTimers();
-      // Restore original execCommand
-      Object.defineProperty(document, 'execCommand', {
-        writable: true,
-        value: () => true,
+      vi.clearAllMocks();
+    });
+
+    it('should copy content to clipboard on button click', async () => {
+      render(
+        <CollapsibleSpec title="TestService" content={mockOpenApiDoc} format="yaml" />
+      );
+
+      const copyButton = screen.getByLabelText('Copy to clipboard');
+      fireEvent.click(copyButton);
+
+      await waitFor(() => {
+        expect(mockClipboard.writeText).toHaveBeenCalled();
       });
     });
 
-    it('should copy content to clipboard on button click', () => {
+    it('should show check icon after copying', async () => {
       render(
         <CollapsibleSpec title="TestService" content={mockOpenApiDoc} format="yaml" />
       );
@@ -187,22 +195,13 @@ describe('CollapsibleSpec', () => {
       const copyButton = screen.getByLabelText('Copy to clipboard');
       fireEvent.click(copyButton);
 
-      expect(document.execCommand).toHaveBeenCalledWith('copy');
+      await waitFor(() => {
+        const checkIcon = copyButton.querySelector('.text-green-400');
+        expect(checkIcon).toBeInTheDocument();
+      });
     });
 
-    it('should show check icon after copying', () => {
-      render(
-        <CollapsibleSpec title="TestService" content={mockOpenApiDoc} format="yaml" />
-      );
-
-      const copyButton = screen.getByLabelText('Copy to clipboard');
-      fireEvent.click(copyButton);
-
-      const checkIcon = copyButton.querySelector('.text-green-400');
-      expect(checkIcon).toBeInTheDocument();
-    });
-
-    it('should reset copied state after 2 seconds', () => {
+    it('should reset copied state after 2 seconds', async () => {
       render(
         <CollapsibleSpec title="TestService" content={mockOpenApiDoc} format="yaml" />
       );
@@ -212,21 +211,24 @@ describe('CollapsibleSpec', () => {
       // Click to copy
       fireEvent.click(copyButton);
 
+      // Wait for async copy to complete
+      await waitFor(() => {
+        expect(mockClipboard.writeText).toHaveBeenCalled();
+      });
+
       // Check icon should be present
       expect(copyButton.querySelector('.text-green-400')).toBeInTheDocument();
 
-      // Fast forward past the 2 second timeout
-      vi.advanceTimersByTime(2500);
+      // Wait for the timeout to complete (2 seconds + buffer)
+      await new Promise(resolve => setTimeout(resolve, 2100));
 
-      // After timers advance, run any pending timers
-      vi.runAllTimers();
-
-      // The component should have reset the copied state
-      // Note: This test verifies the setTimeout was called correctly
-      // In a real scenario, the state would update after the timeout
+      // After timeout, check icon should be gone
+      await waitFor(() => {
+        expect(copyButton.querySelector('.text-green-400')).not.toBeInTheDocument();
+      });
     });
 
-    it('should stop propagation on copy button click', () => {
+    it('should stop propagation on copy button click', async () => {
       render(
         <CollapsibleSpec title="TestService" content={mockOpenApiDoc} format="yaml" />
       );
@@ -246,20 +248,18 @@ describe('CollapsibleSpec', () => {
       expect(textareaAfter).toEqual(textareaBefore);
     });
 
-    it('should handle copy errors gracefully', () => {
-      Object.defineProperty(document, 'execCommand', {
-        writable: true,
-        value: vi.fn().mockImplementation(() => {
-          throw new Error('Copy failed');
-        }),
-      });
+    it('should handle copy errors gracefully', async () => {
+      mockClipboard.writeText.mockRejectedValue(new Error('Copy failed'));
 
-      expect(() => {
+      expect(async () => {
         render(
           <CollapsibleSpec title="TestService" content={mockOpenApiDoc} format="yaml" />
         );
         const copyButton = screen.getByLabelText('Copy to clipboard');
         fireEvent.click(copyButton);
+        await waitFor(() => {
+          expect(mockClipboard.writeText).toHaveBeenCalled();
+        });
       }).not.toThrow();
     });
   });
