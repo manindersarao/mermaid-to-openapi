@@ -41,14 +41,14 @@ export interface Interaction {
   contextServer?: string;
   security?: string[];
   tags?: string[];
-  externalDocs?: ExternalDocumentation;
+  externalDocs?: MermaidExternalDocumentation;
   requestMediaType?: string;
   responseMediaType?: string;
   operationId?: string;
   deprecated?: boolean;
 }
 
-export interface ExternalDocumentation {
+export interface MermaidExternalDocumentation {
   url?: string;
   description?: string;
 }

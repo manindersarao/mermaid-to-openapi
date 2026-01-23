@@ -115,7 +115,7 @@ export function validateOpenApiSpecs(specs: MultiSpecDocs): ValidationResult {
             methods.forEach((method) => {
               const operation = pathItem[method as keyof typeof pathItem];
               if (operation && typeof operation === 'object') {
-                const operationRecord = operation as Record<string, unknown>;
+                const operationRecord = operation as unknown as Record<string, unknown>;
                 if ('operationId' in operationRecord && typeof operationRecord.operationId === 'string') {
                   const opId = operationRecord.operationId;
                   if (opId) {
@@ -287,7 +287,7 @@ function validatePaths(spec: OpenApiDoc): ValidationError[] {
 
       // Validate request body if present
       if ('requestBody' in operation && operation.requestBody) {
-        const bodyErrors = validateRequestBody(operation.requestBody, path, method, spec);
+        const bodyErrors = validateRequestBody(operation.requestBody as unknown as Record<string, unknown>, path, method, spec);
         errors.push(...bodyErrors);
       }
 
@@ -341,7 +341,7 @@ function validateResponses(
 
     // Check for content field
     if ('content' in response && response.content) {
-      const contentErrors = validateMediaTypes(response.content, path, method, statusCode, spec);
+      const contentErrors = validateMediaTypes(response.content as unknown as Record<string, unknown>, path, method, statusCode, spec);
       errors.push(...contentErrors);
     } else {
       errors.push({
@@ -369,7 +369,7 @@ function validateRequestBody(
   const errors: ValidationError[] = [];
 
   if ('content' in requestBody && requestBody.content) {
-    const contentErrors = validateMediaTypes(requestBody.content, path, method, 'request body', spec);
+    const contentErrors = validateMediaTypes(requestBody.content as unknown as Record<string, unknown>, path, method, 'request body', spec);
     errors.push(...contentErrors);
   } else {
     errors.push({
@@ -485,7 +485,7 @@ function validatePathParameters(spec: OpenApiDoc): ValidationError[] {
       }
 
       // Check parameters defined in the operation
-      const operationRecord = operation as Record<string, unknown>;
+      const operationRecord = operation as unknown as Record<string, unknown>;
       if ('parameters' in operationRecord && Array.isArray(operationRecord.parameters)) {
         for (const param of operationRecord.parameters) {
           if (!param || typeof param !== 'object') {

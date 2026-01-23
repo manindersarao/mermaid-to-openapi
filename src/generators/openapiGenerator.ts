@@ -1,5 +1,5 @@
 import type { MermaidAST } from '@/types';
-import type { Parameter, MultiSpecDocs, SecurityScheme, SchemaObject } from '@/types';
+import type { Parameter, MultiSpecDocs, SecurityScheme, SchemaObject, Operation } from '@/types';
 import { generateSchema } from './schemaGenerator';
 
 /**
@@ -193,7 +193,7 @@ const findOrCreateSchemaComponent = (
 /**
  * Gets the default media type for a request method
  */
-const getDefaultRequestMediaType = (): string => {
+const getDefaultRequestMediaType = (_method: string): string => {
   return 'application/json';
 };
 
@@ -278,7 +278,7 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
     }
 
     // Create operation with documentation features
-    const operation: Record<string, unknown> = {
+    const operation: Operation = {
       summary: interaction.summary || `Operation for ${cleanPath}`,
       parameters: parameters.length > 0 ? parameters : undefined,
       responses: {}
