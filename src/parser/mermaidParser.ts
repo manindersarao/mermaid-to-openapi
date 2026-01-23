@@ -52,12 +52,11 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
       // Attach note to last request
       if (lastRequest && token.participants && token.participants.includes(lastRequest.to)) {
         if (token.content) {
-          // Normalize newlines (handle both \n and literal \n)
-          const normalizedContent = token.content.replace(/\\n/g, '\n');
-
           // Parse body from note (works for both body and info note types)
+          // Use the original content (not normalized) for JSON parsing
+          // The regex stops at \n which is correct - JSON.parse handles escaped \n correctly
           try {
-            const jsonMatch = normalizedContent.match(/Body:\s*(.+?)(?=\n|$)/i);
+            const jsonMatch = token.content.match(/Body:\s*(.+?)(?=\n|$)/i);
             if (jsonMatch) {
               lastRequest.body = JSON.parse(jsonMatch[1]);
             }
@@ -68,6 +67,10 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
               message: `Invalid JSON in body note at line ${token.line}: ${token.content}`
             });
           }
+
+          // Normalize newlines for non-JSON parsing (like Security declarations)
+          // handle both \n and literal \n
+          const normalizedContent = token.content.replace(/\\n/g, '\n');
 
           // Find all Security: declarations in the note
           const securityRegex = /Security:\s*(.+?)(?=\n|$)/gi;
