@@ -193,7 +193,7 @@ const findOrCreateSchemaComponent = (
 /**
  * Gets the default media type for a request method
  */
-const getDefaultRequestMediaType = (_method: string): string => {
+const getDefaultRequestMediaType = (): string => {
   return 'application/json';
 };
 
@@ -386,7 +386,7 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
         );
 
         // Determine request media type
-        const requestType = requestMediaType || getDefaultRequestMediaType(normalizedMethod);
+        const requestType = requestMediaType || getDefaultRequestMediaType();
 
         specs[server].paths[cleanPath][normalizedMethod].requestBody = {
           content: {
