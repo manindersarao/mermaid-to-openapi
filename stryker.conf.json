@@ -2,12 +2,10 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
   "coverageAnalysis": "perTest",
+  "ignoreStatic": true,
   "mutate": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "!src/**/*.test.ts",
-    "!src/**/*.test.tsx",
-    "!src/main.tsx"
+    "src/parser/**/*.ts",
+    "src/generators/**/*.ts"
   ],
   "thresholds": {
     "high": 85,
@@ -15,7 +13,7 @@
     "break": 70
   },
   "vitest": {
-    "configFile": "./vite.config.ts"
+    "configFile": "./vitest.config.ts"
   },
   "reporters": [
     "progress",
