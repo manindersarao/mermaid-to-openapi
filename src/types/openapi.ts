@@ -11,6 +11,31 @@ export interface SchemaObject {
   maxLength?: number;
 }
 
+export interface SecurityScheme {
+  type: 'apiKey' | 'http' | 'oauth2' | 'openIdConnect';
+  description?: string;
+  name?: string;
+  in?: 'header' | 'query';
+  scheme?: string;
+  bearerFormat?: string;
+  flows?: OAuthFlows;
+  openIdConnectUrl?: string;
+}
+
+export interface OAuthFlows {
+  implicit?: OAuthFlow;
+  password?: OAuthFlow;
+  clientCredentials?: OAuthFlow;
+  authorizationCode?: OAuthFlow;
+}
+
+export interface OAuthFlow {
+  authorizationUrl?: string;
+  tokenUrl?: string;
+  refreshUrl?: string;
+  scopes?: Record<string, string>;
+}
+
 export interface Parameter {
   name: string;
   in: 'path' | 'query' | 'header' | 'cookie';
@@ -41,6 +66,7 @@ export interface Operation {
   parameters?: Parameter[];
   requestBody?: RequestBody;
   responses: Record<string, ResponseContent>;
+  security?: Record<string, string[]>[];
 }
 
 export interface PathItem {
@@ -55,6 +81,9 @@ export interface OpenApiDoc {
     description?: string;
   };
   paths: Record<string, PathItem>;
+  components?: {
+    securitySchemes?: Record<string, SecurityScheme>;
+  };
 }
 
 export type MultiSpecDocs = Record<string, OpenApiDoc>;

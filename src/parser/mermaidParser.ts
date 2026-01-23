@@ -65,6 +65,58 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
             });
           }
         }
+
+        // Parse security from note
+        if (token.content) {
+          // Find all Security: declarations in the note
+          const securityRegex = /Security:\s*(.+?)(?=\n|$)/gi;
+          let match;
+
+          while ((match = securityRegex.exec(token.content)) !== null) {
+            const securityInfo = match[1].trim();
+            if (!lastRequest.security) {
+              lastRequest.security = [];
+            }
+
+            // Parse different security patterns
+            // Pattern: "bearerAuth" or "basicAuth"
+            if (securityInfo.toLowerCase() === 'bearerauth') {
+              lastRequest.security.push('bearerAuth');
+            } else if (securityInfo.toLowerCase() === 'basicauth') {
+              lastRequest.security.push('basicAuth');
+            }
+            // Pattern: "apiKey in header" or "apiKey in query"
+            else if (securityInfo.toLowerCase().startsWith('apikey')) {
+              const locationMatch = securityInfo.match(/apiKey\s+in\s+(header|query)/i);
+              if (locationMatch) {
+                const location = locationMatch[1].toLowerCase();
+                lastRequest.security.push(`apiKey_${location}`);
+              } else {
+                // Default to header if location not specified
+                lastRequest.security.push('apiKey_header');
+              }
+            }
+            // Pattern: OAuth2 with optional scopes
+            else if (securityInfo.toLowerCase().startsWith('oauth2')) {
+              const scopesMatch = securityInfo.match(/oauth2\s*\[(.*?)\]/i);
+              if (scopesMatch) {
+                // Parse scopes: read,write
+                const scopes = scopesMatch[1].split(',').map(s => s.trim()).filter(s => s);
+                lastRequest.security.push(`oauth2:${scopes.join(',')}`);
+              } else {
+                lastRequest.security.push('oauth2');
+              }
+            }
+            // Pattern: OpenID Connect
+            else if (securityInfo.toLowerCase().startsWith('openid')) {
+              lastRequest.security.push('openIdConnect');
+            }
+            // Otherwise, treat as a custom scheme name
+            else {
+              lastRequest.security.push(securityInfo);
+            }
+          }
+        }
       }
     }
   });

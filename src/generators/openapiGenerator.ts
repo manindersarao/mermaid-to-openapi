@@ -1,5 +1,5 @@
 import type { MermaidAST } from '@/types';
-import type { Parameter, MultiSpecDocs } from '@/types';
+import type { Parameter, MultiSpecDocs, SecurityScheme } from '@/types';
 import { generateSchema } from './schemaGenerator';
 
 /**
@@ -46,13 +46,77 @@ const extractParameters = (path: string): { cleanPath: string; parameters: Param
 };
 
 /**
+ * Creates a security scheme object from a security string
+ */
+const createSecurityScheme = (security: string): SecurityScheme | null => {
+  // bearerAuth
+  if (security === 'bearerAuth') {
+    return {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT'
+    };
+  }
+
+  // basicAuth
+  if (security === 'basicAuth') {
+    return {
+      type: 'http',
+      scheme: 'basic'
+    };
+  }
+
+  // apiKey_header or apiKey_query
+  if (security.startsWith('apiKey_')) {
+    const location = security.replace('apiKey_', '');
+    if (location === 'header' || location === 'query') {
+      return {
+        type: 'apiKey',
+        name: 'X-API-Key',
+        in: location
+      };
+    }
+  }
+
+  // oauth2 or oauth2:scopes
+  if (security.startsWith('oauth2')) {
+    const scopesPart = security.includes(':') ? security.split(':')[1] : '';
+    const scopes = scopesPart ? scopesPart.split(',').reduce((acc, scope) => {
+      acc[scope] = `${scope} permission`;
+      return acc;
+    }, {} as Record<string, string>) : undefined;
+
+    return {
+      type: 'oauth2',
+      flows: {
+        implicit: {
+          authorizationUrl: 'https://example.com/oauth/authorize',
+          scopes
+        }
+      }
+    };
+  }
+
+  // openIdConnect
+  if (security === 'openIdConnect') {
+    return {
+      type: 'openIdConnect',
+      openIdConnectUrl: 'https://example.com/.well-known/openid-configuration'
+    };
+  }
+
+  return null;
+};
+
+/**
  * Generates OpenAPI specs from a Mermaid AST
  */
 export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
   const specs: MultiSpecDocs = {};
+  const securitySchemesCache: Record<string, Record<string, SecurityScheme>> = {};
 
   ast.interactions.forEach((interaction) => {
-    const { to: server, method, path: rawPath, body, response } = interaction;
+    const { to: server, method, path: rawPath, body, response, security } = interaction;
 
     if (!method || !rawPath || !server) {
       return;
@@ -63,8 +127,12 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
       specs[server] = {
         openapi: '3.0.0',
         info: { title: `${server} API`, version: '1.0.0' },
-        paths: {}
+        paths: {},
+        components: {
+          securitySchemes: {}
+        }
       };
+      securitySchemesCache[server] = {};
     }
 
     // Parse path and extract parameters
@@ -84,6 +152,35 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
       parameters: parameters.length > 0 ? parameters : undefined,
       responses: {}
     };
+
+    // Add security to operation
+    if (security && security.length > 0) {
+      const operationSecurity: Record<string, string[]>[] = [];
+
+      security.forEach(sec => {
+        const scheme = createSecurityScheme(sec);
+        if (scheme) {
+          // Add scheme to components if not already added
+          if (!securitySchemesCache[server][sec]) {
+            securitySchemesCache[server][sec] = scheme;
+            specs[server].components!.securitySchemes![sec] = scheme;
+          }
+
+          // Add security reference to operation
+          // Handle scopes for oauth2
+          if (sec.startsWith('oauth2:')) {
+            const scopes = sec.split(':')[1].split(',');
+            operationSecurity.push({ [sec]: scopes });
+          } else {
+            operationSecurity.push({ [sec]: [] });
+          }
+        }
+      });
+
+      if (operationSecurity.length > 0) {
+        specs[server].paths[cleanPath][normalizedMethod].security = operationSecurity;
+      }
+    }
 
     // Add response if present
     if (response) {

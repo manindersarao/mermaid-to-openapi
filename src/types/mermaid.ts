@@ -39,6 +39,7 @@ export interface Interaction {
   contextPath?: string;
   contextMethod?: string;
   contextServer?: string;
+  security?: string[];
 }
 
 export interface Note {
