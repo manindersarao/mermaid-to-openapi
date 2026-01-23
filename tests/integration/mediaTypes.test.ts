@@ -11,7 +11,7 @@ describe('Integration - Advanced Media Types (Task 27)', () => {
         participant API
 
         User->>API: POST /data
-        Note over API: Request-Type: application/xml\nBody: {"data":"value"}
+        Note over API: Request-Type: application/xml\\nBody: {"data":"value"}
         API-->>User: 201 Created
     `;
 
@@ -49,7 +49,7 @@ describe('Integration - Advanced Media Types (Task 27)', () => {
         participant API
 
         User->>API: POST /upload
-        Note over API: Request-Type: multipart/form-data\nBody: {"file":"data"}
+        Note over API: Request-Type: multipart/form-data\\nBody: {"file":"data"}
         API-->>User: 201 Created
     `;
 
@@ -68,7 +68,7 @@ describe('Integration - Advanced Media Types (Task 27)', () => {
         participant API
 
         User->>API: POST /convert
-        Note over API: Request-Type: application/xml\nResponse-Type: application/json\nBody: {"data":"value"}
+        Note over API: Request-Type: application/xml\\nResponse-Type: application/json\\nBody: {"data":"value"}
         API-->>User: 201 Created
     `;
 
@@ -88,7 +88,7 @@ describe('Integration - Advanced Media Types (Task 27)', () => {
         participant API
 
         User->>API: POST /text
-        Note over API: Request-Type: text/plain\nBody: {"text":"hello"}
+        Note over API: Request-Type: text/plain\\nBody: {"text":"hello"}
         API-->>User: 201 Created
     `;
 
@@ -107,7 +107,7 @@ describe('Integration - Advanced Media Types (Task 27)', () => {
         participant API
 
         User->>API: POST /form
-        Note over API: Request-Type: application/x-www-form-urlencoded\nBody: {"field":"value"}
+        Note over API: Request-Type: application/x-www-form-urlencoded\\nBody: {"field":"value"}
         API-->>User: 201 Created
     `;
 
@@ -126,7 +126,7 @@ describe('Integration - Advanced Media Types (Task 27)', () => {
         participant API
 
         User->>API: POST /custom
-        Note over API: Request-Type: application/vnd.company.v1+json\nBody: {"data":"value"}
+        Note over API: Request-Type: application/vnd.company.v1+json\\nBody: {"data":"value"}
         API-->>User: 201 Created
     `;
 

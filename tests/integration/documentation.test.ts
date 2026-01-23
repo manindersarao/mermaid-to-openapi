@@ -108,7 +108,7 @@ describe('Integration - Documentation Features (Task 26)', () => {
         participant API
 
         User->>API: GET /users
-        Note over API: External-Docs-Url: https://docs.example.com/users\nExternal-Docs-Description: Detailed docs
+        Note over API: External-Docs-Url: https://docs.example.com/users\\nExternal-Docs-Description: Detailed docs
         API-->>User: 200 OK
     `;
 
@@ -130,7 +130,7 @@ describe('Integration - Documentation Features (Task 26)', () => {
         participant API
 
         User->>API: GET /users
-        Note over API: Summary: Get all users\nDescription: Paginated list\nTags: users, admin\nOperation-Id: getAllUsers\nDeprecated: false
+        Note over API: Summary: Get all users\\nDescription: Paginated list\\nTags: users, admin\\nOperation-Id: getAllUsers\\nDeprecated: false
         API-->>User: 200 OK
     `;
 

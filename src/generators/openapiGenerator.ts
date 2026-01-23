@@ -154,7 +154,7 @@ const areSchemasEqual = (schema1: SchemaObject, schema2: SchemaObject): boolean 
 
 /**
  * Finds or creates a reusable schema component
- * Only extracts to component if the schema is used more than once
+ * Extracts to component if the schema is used more than once
  */
 const findOrCreateSchemaComponent = (
   schema: SchemaObject,
@@ -300,7 +300,7 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
     }
 
     // Add deprecated flag if present
-    if (deprecated) {
+    if (deprecated !== undefined) {
       operation.deprecated = deprecated;
     }
 
@@ -397,6 +397,14 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
       } catch {
         // If body parsing fails, skip request body
       }
+    }
+  });
+
+  // Copy schema components from cache to specs
+  Object.keys(specs).forEach(server => {
+    const spec = specs[server];
+    if (spec.components && schemaComponentsCache[server]) {
+      spec.components.schemas = schemaComponentsCache[server];
     }
   });
 

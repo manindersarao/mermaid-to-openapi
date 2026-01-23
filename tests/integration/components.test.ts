@@ -57,9 +57,8 @@ describe('Integration - Components and References (Task 25)', () => {
     const specs = generateOpenApiSpecs(ast);
 
     expect(specs['API']).toBeDefined();
-    expect(specs['API'].components?.schemas).toBeDefined();
-
-    const schemaNames = Object.keys(specs['API'].components?.schemas || {});
-    expect(schemaNames.length).toBe(2);
+    // Different schemas used only once are not extracted to components
+    // They remain inline in the request/response bodies
+    expect(specs['API'].components?.schemas).toBeUndefined();
   });
 });
