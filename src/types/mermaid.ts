@@ -40,6 +40,17 @@ export interface Interaction {
   contextMethod?: string;
   contextServer?: string;
   security?: string[];
+  tags?: string[];
+  externalDocs?: ExternalDocumentation;
+  requestMediaType?: string;
+  responseMediaType?: string;
+  operationId?: string;
+  deprecated?: boolean;
+}
+
+export interface ExternalDocumentation {
+  url?: string;
+  description?: string;
 }
 
 export interface Note {

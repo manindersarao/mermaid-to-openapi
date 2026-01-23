@@ -445,7 +445,8 @@ describe('Security Schemes - Generator', () => {
       const specs = generateOpenApiSpecs(ast);
 
       expect(specs['API'].paths['/users'].get?.security).toBeUndefined();
-      expect(specs['API'].components?.securitySchemes).toEqual({});
+      // Components should be undefined when empty (cleanup removes empty components)
+      expect(specs['API'].components).toBeUndefined();
     });
 
     it('should handle operation with empty security array', () => {

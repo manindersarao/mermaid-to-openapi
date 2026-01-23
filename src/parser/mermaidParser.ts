@@ -51,9 +51,13 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
     } else if (token.type === 'note') {
       // Attach note to last request
       if (lastRequest && token.participants && token.participants.includes(lastRequest.to)) {
-        if (token.noteType === 'body' && token.content) {
+        if (token.content) {
+          // Normalize newlines (handle both \n and literal \n)
+          const normalizedContent = token.content.replace(/\\n/g, '\n');
+
+          // Parse body from note (works for both body and info note types)
           try {
-            const jsonMatch = token.content.match(/Body:\s*(.+)/);
+            const jsonMatch = normalizedContent.match(/Body:\s*(.+?)(?=\n|$)/i);
             if (jsonMatch) {
               lastRequest.body = JSON.parse(jsonMatch[1]);
             }
@@ -64,15 +68,12 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
               message: `Invalid JSON in body note at line ${token.line}: ${token.content}`
             });
           }
-        }
 
-        // Parse security from note
-        if (token.content) {
           // Find all Security: declarations in the note
           const securityRegex = /Security:\s*(.+?)(?=\n|$)/gi;
           let match;
 
-          while ((match = securityRegex.exec(token.content)) !== null) {
+          while ((match = securityRegex.exec(normalizedContent)) !== null) {
             const securityInfo = match[1].trim();
             if (!lastRequest.security) {
               lastRequest.security = [];
@@ -115,6 +116,58 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
             else {
               lastRequest.security.push(securityInfo);
             }
+          }
+
+          // Parse summary from note
+          const summaryMatch = normalizedContent.match(/Summary:\s*(.+?)(?=\n|$)/i);
+          if (summaryMatch) {
+            lastRequest.summary = summaryMatch[1].trim();
+          }
+
+          // Parse description from note
+          const descriptionMatch = normalizedContent.match(/Description:\s*(.+?)(?=\n|$)/i);
+          if (descriptionMatch) {
+            lastRequest.description = descriptionMatch[1].trim();
+          }
+
+          // Parse tags from note (comma-separated)
+          const tagsMatch = normalizedContent.match(/Tags:\s*(.+?)(?=\n|$)/i);
+          if (tagsMatch) {
+            lastRequest.tags = tagsMatch[1].split(',').map(t => t.trim()).filter(t => t);
+          }
+
+          // Parse operation ID from note
+          const operationIdMatch = normalizedContent.match(/Operation-Id:\s*(.+?)(?=\n|$)/i);
+          if (operationIdMatch) {
+            lastRequest.operationId = operationIdMatch[1].trim();
+          }
+
+          // Parse deprecated flag from note
+          const deprecatedMatch = normalizedContent.match(/Deprecated:\s*(true|false)/i);
+          if (deprecatedMatch) {
+            lastRequest.deprecated = deprecatedMatch[1].toLowerCase() === 'true';
+          }
+
+          // Parse external docs from note
+          const externalDocsUrlMatch = normalizedContent.match(/External-Docs-Url:\s*(.+?)(?=\n|$)/i);
+          const externalDocsDescMatch = normalizedContent.match(/External-Docs-Description:\s*(.+?)(?=\n|$)/i);
+          if (externalDocsUrlMatch || externalDocsDescMatch) {
+            lastRequest.externalDocs = {
+              url: externalDocsUrlMatch ? externalDocsUrlMatch[1].trim() : undefined,
+              description: externalDocsDescMatch ? externalDocsDescMatch[1].trim() : undefined
+            };
+          }
+
+          // Parse request media type from note
+          const requestTypeMatch = normalizedContent.match(/Request-Type:\s*(.+?)(?=\n|$)/i);
+          if (requestTypeMatch) {
+            lastRequest.requestMediaType = requestTypeMatch[1].trim();
+          }
+
+          // Parse response media type from note
+          const responseTypeMatch = normalizedContent.match(/Response-Type:\s*(.+?)(?=\n|$)/i);
+          if (responseTypeMatch) {
+            lastRequest.responseMediaType = responseTypeMatch[1].trim();
           }
         }
       }
