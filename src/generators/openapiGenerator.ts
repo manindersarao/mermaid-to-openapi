@@ -115,7 +115,7 @@ const generateSchemaName = (schema: SchemaObject, usedNames: Set<string>): strin
   if (schema.properties) {
     const propKeys = Object.keys(schema.properties).slice(0, 3).join('');
     if (propKeys) {
-      let baseName = propKeys.charAt(0).toUpperCase() + propKeys.slice(1) + 'Schema';
+      const baseName = propKeys.charAt(0).toUpperCase() + propKeys.slice(1) + 'Schema';
       let counter = 1;
       let name = baseName;
       while (usedNames.has(name)) {
@@ -193,7 +193,7 @@ const findOrCreateSchemaComponent = (
 /**
  * Gets the default media type for a request method
  */
-const getDefaultRequestMediaType = (method: string): string => {
+const getDefaultRequestMediaType = (): string => {
   return 'application/json';
 };
 
@@ -278,7 +278,7 @@ export function generateOpenApiSpecs(ast: MermaidAST): MultiSpecDocs {
     }
 
     // Create operation with documentation features
-    const operation: any = {
+    const operation: Record<string, unknown> = {
       summary: interaction.summary || `Operation for ${cleanPath}`,
       parameters: parameters.length > 0 ? parameters : undefined,
       responses: {}

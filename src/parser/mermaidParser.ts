@@ -60,7 +60,7 @@ export function parse(tokens: MermaidToken[]): MermaidAST {
             if (jsonMatch) {
               lastRequest.body = JSON.parse(jsonMatch[1]);
             }
-          } catch (e) {
+          } catch {
             notes.push({
               type: 'error',
               line: token.line,

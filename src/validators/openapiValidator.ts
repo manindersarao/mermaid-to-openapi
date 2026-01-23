@@ -105,7 +105,7 @@ export function validateOpenApiSpecs(specs: MultiSpecDocs): ValidationResult {
     // Check for operations and operation IDs
     if (spec.paths) {
       let hasOperations = false;
-      for (const [path, pathItem] of Object.entries(spec.paths)) {
+      for (const [, pathItem] of Object.entries(spec.paths)) {
         if (pathItem && typeof pathItem === 'object') {
           const methods = Object.keys(pathItem).filter((key) => VALID_HTTP_METHODS.has(key));
           if (methods.length > 0) {
